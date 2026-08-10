@@ -22,6 +22,48 @@ ground truth fixed and vary only the grounding along a four-rung ladder:
 `D` and `G` are emitted from a **single source of truth** (`emit/emit.py`), so any D-vs-G difference
 is *representation*, not content. `D→G` isolates representation; `G→S` isolates **enforcement**.
 
+## Token economics — the single most significant fact
+
+Higher accuracy usually costs more tokens. Here it costs **fewer**. `D` and `G` resend the entire
+knowledge base (DDL + OKF markdown / structured model) on every call and ask the model to emit full
+SQL; `S` sends a compact field catalog and receives a compact query plan that is compiled
+deterministically. The result is that the *most* accurate condition is also the *cheapest* grounded
+one. Measured on the Gemini arm (the arm with per-call token accounting), pooled across all questions
+and models:
+
+| Layer | In tok/query | Out tok/query | Total/query | Latency | ~$ / 1,000 queries | Tokens vs **S** |
+|---|--:|--:|--:|--:|--:|--:|
+| U ungrounded | 331 | 75 | 406 | 3.19s | $0.20 | 0.54× (but 16% accurate — useless) |
+| D doc-grounded (OKF) | 3,044 | 85 | 3,129 | 2.63s | $1.02 | **4.1× more** |
+| G prompt-grounded model | 1,769 | 85 | 1,854 | 2.23s | $0.64 | **2.4× more** |
+| **S semantic layer** | **717** | **40** | **757** | **1.56s** | **$0.26** | **1.0× (baseline)** |
+
+Against the layers that actually work, `S` cuts tokens **~76% vs D** and **~59% vs G** per query,
+while being the **fastest** and the **most accurate**. Across the full benchmark, `D + G` together
+burned **3.0M tokens**; `S` used **455K** — a **6.6×** difference.
+
+*(Blended Gemini rate used for the dollar column: ≈ $0.30 / 1M input, $1.20 / 1M output.)*
+
+### Cost at enterprise scale (extrapolation)
+
+The per-query deltas are small; at enterprise query volumes they compound. Taking the measured
+per-query token cost above and scaling by analytical-query volume (each query answered once by the
+LLM):
+
+| Analytical queries | D / year | G / year | **S / year** | Saved vs D | Saved vs G |
+|---|--:|--:|--:|--:|--:|
+| 10k / day (3.65M/yr) | $3,720 | $2,340 | **$950** | $2,770 | $1,390 |
+| 100k / day (36.5M/yr) | $37,200 | $23,400 | **$9,500** | $27,700 | $13,900 |
+| 1M / day (365M/yr) | $372,000 | $234,000 | **$95,000** | $277,000 | $139,000 |
+
+Two multipliers make this conservative. **Model tier:** the table uses a cheap flash-class model; a
+frontier reasoning model priced ~20–30× higher scales every figure by the same factor (S's per-query
+edge is a *ratio*, so it holds). **Retries and agentic loops:** free-form `D`/`G` fail ~15–25% of
+governed questions and get re-run or human-corrected; `S`'s deterministic compile means a governed
+question is answered right the first time, so the effective cost gap is wider than the single-call
+table shows. The dominant enterprise cost — a *wrong* number reaching a decision — is the axis the
+token table cannot price at all.
+
 ## Headline result
 
 Across **2 vendors (Gemini + Claude), 7 models, and ~3,000 scored trials**, accuracy climbs the
@@ -86,48 +128,6 @@ unanswerable question is correct; refusal to an answerable one is wrong. We addi
 error magnitude on wrong answers, heuristic SQL audit flags (fan-out, partial-key, missing certified
 filter, identity-vs-label), cross-paraphrase consistency, and multi-turn drift. Statistics: 95%
 cluster-bootstrap CIs (resampling questions) and McNemar exact paired tests between adjacent rungs.
-
-## Token economics — the semantic layer is also the cheapest grounded layer
-
-Higher accuracy usually costs more tokens. Here it costs **fewer**. `D` and `G` resend the entire
-knowledge base (DDL + OKF markdown / structured model) on every call and ask the model to emit full
-SQL; `S` sends a compact field catalog and receives a compact query plan that is compiled
-deterministically. The result is that the *most* accurate condition is also the *cheapest* grounded
-one. Measured on the Gemini arm (the arm with per-call token accounting), pooled across all questions
-and models:
-
-| Layer | In tok/query | Out tok/query | Total/query | Latency | ~$ / 1,000 queries | Tokens vs **S** |
-|---|--:|--:|--:|--:|--:|--:|
-| U ungrounded | 331 | 75 | 406 | 3.19s | $0.20 | 0.54× (but 16% accurate — useless) |
-| D doc-grounded (OKF) | 3,044 | 85 | 3,129 | 2.63s | $1.02 | **4.1× more** |
-| G prompt-grounded model | 1,769 | 85 | 1,854 | 2.23s | $0.64 | **2.4× more** |
-| **S semantic layer** | **717** | **40** | **757** | **1.56s** | **$0.26** | **1.0× (baseline)** |
-
-Against the layers that actually work, `S` cuts tokens **~76% vs D** and **~59% vs G** per query,
-while being the **fastest** and the **most accurate**. Across the full benchmark, `D + G` together
-burned **3.0M tokens**; `S` used **455K** — a **6.6×** difference.
-
-*(Blended Gemini rate used for the dollar column: ≈ $0.30 / 1M input, $1.20 / 1M output.)*
-
-### Cost at enterprise scale (extrapolation)
-
-The per-query deltas are small; at enterprise query volumes they compound. Taking the measured
-per-query token cost above and scaling by analytical-query volume (each query answered once by the
-LLM):
-
-| Analytical queries | D / year | G / year | **S / year** | Saved vs D | Saved vs G |
-|---|--:|--:|--:|--:|--:|
-| 10k / day (3.65M/yr) | $3,720 | $2,340 | **$950** | $2,770 | $1,390 |
-| 100k / day (36.5M/yr) | $37,200 | $23,400 | **$9,500** | $27,700 | $13,900 |
-| 1M / day (365M/yr) | $372,000 | $234,000 | **$95,000** | $277,000 | $139,000 |
-
-Two multipliers make this conservative. **Model tier:** the table uses a cheap flash-class model; a
-frontier reasoning model priced ~20–30× higher scales every figure by the same factor (S's per-query
-edge is a *ratio*, so it holds). **Retries and agentic loops:** free-form `D`/`G` fail ~15–25% of
-governed questions and get re-run or human-corrected; `S`'s deterministic compile means a governed
-question is answered right the first time, so the effective cost gap is wider than the single-call
-table shows. The dominant enterprise cost — a *wrong* number reaching a decision — is the axis the
-token table cannot price at all.
 
 ## The accuracy ceiling — S reaches 100%, the free-form layers plateau
 
