@@ -1,0 +1,7 @@
+  dd_top_customer  done (9 runs so far)
+  dd_paidsearch    done (18 runs so far)
+  dd_active_customers done (27 runs so far)
+  dd_region_by_category done (36 runs so far)
+  dd_ctrl_rev_by_region done (45 runs so far)
+  dd_ctrl_rev_by_category done (54 runs so far)
+TOTAL runs logged: 54 -> results/runs_drilldown.jsonl

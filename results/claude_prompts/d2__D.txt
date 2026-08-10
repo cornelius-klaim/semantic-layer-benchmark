@@ -1,0 +1,260 @@
+You are a senior data analyst. You are given the schema plus a KNOWLEDGE BASE that defines the business meaning of the data — read it carefully and apply it.
+
+DATABASE SCHEMA (DDL):
+CREATE TABLE hr_bridge (
+  employee_id BIGINT,
+  work_email VARCHAR,
+  region VARCHAR,
+  tenure_years BIGINT
+);
+
+CREATE TABLE sales_reps (
+  employee_id BIGINT,
+  rep_name VARCHAR,
+  sales_region VARCHAR
+);
+
+CREATE TABLE opportunities (
+  opp_id BIGINT,
+  employee_id BIGINT,
+  quarter VARCHAR,
+  closed_revenue DOUBLE,
+  quota_attainment DOUBLE
+);
+
+CREATE TABLE learners (
+  learner_id BIGINT,
+  email VARCHAR
+);
+
+CREATE TABLE courses (
+  course_id BIGINT,
+  course_name VARCHAR
+);
+
+CREATE TABLE course_completions (
+  learner_id BIGINT,
+  course_id BIGINT
+);
+
+CREATE TABLE assessment_scores (
+  learner_id BIGINT,
+  course_id BIGINT,
+  score DOUBLE
+);
+
+
+KNOWLEDGE BASE:
+
+<!-- FILE: index.md -->
+---
+type: dataset
+title: Cross-Domain Enterprise (Learning x Sales x HR)
+resource: d2
+tags: [retail, sales]
+---
+# Cross-Domain Enterprise (Learning x Sales x HR)
+Three source systems that share no obvious key. Sales opportunities are keyed by employee_id; the LMS (learners, completions, assessments) is keyed by a messy email; the HR bridge is the ONLY path between them, and only after email normalization (lowercase, strip the legacy '.contractor' alias). The certified rep_course_flags rollup resolves that identity join once.
+
+## Grain
+opportunities is one row per rep (quarter). assessment_scores is one row per (learner, course). A learner maps to exactly one employee via the normalized email bridge. Grouping attainment by a course flag requires the certified per-rep rollup.
+
+## Concept documents
+- Tables: [assessment_scores](./table_assessment_scores.md), [courses](./table_courses.md), [hr_bridge](./table_hr_bridge.md), [opportunities](./table_opportunities.md), [rep_course_flags](./table_rep_course_flags.md)
+- Metrics: [avg_quota_attainment](./metric_avg_quota_attainment.md), [total_revenue](./metric_total_revenue.md), [rep_count](./metric_rep_count.md), [avg_assessment_score](./metric_avg_assessment_score.md), [attainment_advneg_yes](./metric_attainment_advneg_yes.md), [attainment_advneg_no](./metric_attainment_advneg_no.md), [advneg_attainment_lift](./metric_advneg_attainment_lift.md)
+
+## Joins
+- `opportunities` relates to `hr_bridge` as **many-to-one**, joined on `opportunities.employee_id = hr_bridge.employee_id`. Because it is many-to-one, aggregating a `hr_bridge`-grain measure across joined `opportunities` rows will double-count (fan-out).
+- `opportunities` relates to `rep_course_flags` as **many-to-one**, joined on `opportunities.employee_id = rep_course_flags.employee_id`. Because it is many-to-one, aggregating a `rep_course_flags`-grain measure across joined `opportunities` rows will double-count (fan-out).
+- `assessment_scores` relates to `learners` as **many-to-one**, joined on `assessment_scores.learner_id = learners.learner_id`. Because it is many-to-one, aggregating a `learners`-grain measure across joined `assessment_scores` rows will double-count (fan-out).
+- `assessment_scores` relates to `courses` as **many-to-one**, joined on `assessment_scores.course_id = courses.course_id`. Because it is many-to-one, aggregating a `courses`-grain measure across joined `assessment_scores` rows will double-count (fan-out).
+- `learners` relates to `hr_bridge` as **many-to-one**, joined on `lower(replace(learners.email,'.contractor','')) = lower(hr_bridge.work_email)`. Because it is many-to-one, aggregating a `hr_bridge`-grain measure across joined `learners` rows will double-count (fan-out).
+
+## Vocabulary
+
+
+<!-- FILE: table_courses.md -->
+---
+type: table
+title: courses
+resource: d2.courses
+tags: [schema]
+---
+# Table: `courses`
+
+| field | type | meaning |
+|---|---|---|
+| `course_name` | string | Name of the course an assessment belongs to. (expression: `courses.course_name`) |
+
+
+<!-- FILE: table_hr_bridge.md -->
+---
+type: table
+title: hr_bridge
+resource: d2.hr_bridge
+tags: [schema]
+---
+# Table: `hr_bridge`
+
+| field | type | meaning |
+|---|---|---|
+| `sales_region` | string | Sales region of the rep (from HR, the certified source of region). (expression: `hr_bridge.region`) |
+| `tenure_years` | number | Rep tenure in years (a known confounder for attainment). (expression: `hr_bridge.tenure_years`) |
+
+
+<!-- FILE: table_rep_course_flags.md -->
+---
+type: table
+title: rep_course_flags
+resource: d2.rep_course_flags
+tags: [schema]
+---
+# Table: `rep_course_flags`
+
+| field | type | meaning |
+|---|---|---|
+| `completed_advneg` | bool | TRUE if the rep completed the 'Advanced Negotiation' course. Resolved via the certified identity bridge. (expression: `rep_course_flags.completed_advneg`) |
+| `completed_distract` | bool | TRUE if the rep completed 'Intro to Spreadsheets' (a control/placebo course). (expression: `rep_course_flags.completed_distract`) |
+
+
+<!-- FILE: metric_advneg_attainment_lift.md -->
+---
+type: metric
+title: advneg_attainment_lift
+resource: d2.metric.advneg_attainment_lift
+tags: [certified]
+---
+# Metric: advneg_attainment_lift
+
+The lift in average quota attainment for reps who completed Advanced Negotiation versus those who did not (completers minus non-completers). Use this for 'how many points higher'.
+
+**Definition.** This is a certified derived measure: `attainment_advneg_yes - attainment_advneg_no`, computed from the certified measures `attainment_advneg_yes`, `attainment_advneg_no`. Each component is aggregated at its own grain and then combined — do not re-derive it from raw columns.
+
+**Also called:** advanced negotiation lift, attainment lift, how much higher attainment.
+
+
+<!-- FILE: metric_attainment_advneg_no.md -->
+---
+type: metric
+title: attainment_advneg_no
+resource: d2.metric.attainment_advneg_no
+tags: [certified]
+---
+# Metric: attainment_advneg_no
+
+Average quota attainment among reps who did NOT complete Advanced Negotiation.
+
+**Definition.** `AVG(opportunities.quota_attainment)`
+
+**Certified filter (always apply).** `rep_course_flags.completed_advneg = FALSE`
+
+**Grain.** This measure is additive at the `opportunities` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+
+<!-- FILE: metric_attainment_advneg_yes.md -->
+---
+type: metric
+title: attainment_advneg_yes
+resource: d2.metric.attainment_advneg_yes
+tags: [certified]
+---
+# Metric: attainment_advneg_yes
+
+Average quota attainment among reps who COMPLETED Advanced Negotiation.
+
+**Definition.** `AVG(opportunities.quota_attainment)`
+
+**Certified filter (always apply).** `rep_course_flags.completed_advneg = TRUE`
+
+**Grain.** This measure is additive at the `opportunities` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+
+<!-- FILE: metric_avg_assessment_score.md -->
+---
+type: metric
+title: avg_assessment_score
+resource: d2.metric.avg_assessment_score
+tags: [certified]
+---
+# Metric: avg_assessment_score
+
+Average LMS assessment score (0-100). Joins to reps only through the certified email-normalization bridge.
+
+**Definition.** `AVG(assessment_scores.score)`
+
+**Grain.** This measure is additive at the `assessment_scores` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+**Also called:** assessment score, test score, average score.
+
+
+<!-- FILE: metric_avg_quota_attainment.md -->
+---
+type: metric
+title: avg_quota_attainment
+resource: d2.metric.avg_quota_attainment
+tags: [certified]
+---
+# Metric: avg_quota_attainment
+
+Average quota attainment across reps (1.0 = met quota). Certified from CRM.
+
+**Definition.** `AVG(opportunities.quota_attainment)`
+
+**Grain.** This measure is additive at the `opportunities` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+**Also called:** attainment, average attainment, quota attainment.
+
+
+<!-- FILE: metric_rep_count.md -->
+---
+type: metric
+title: rep_count
+resource: d2.metric.rep_count
+tags: [certified]
+---
+# Metric: rep_count
+
+Number of distinct reps.
+
+**Definition.** `COUNT(DISTINCT opportunities.employee_id)`
+
+**Grain.** This measure is additive at the `opportunities` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+**Also called:** number of reps, headcount.
+
+
+<!-- FILE: metric_total_revenue.md -->
+---
+type: metric
+title: total_revenue
+resource: d2.metric.total_revenue
+tags: [certified]
+---
+# Metric: total_revenue
+
+Total closed revenue across reps.
+
+**Definition.** `SUM(opportunities.closed_revenue)`
+
+**Grain.** This measure is additive at the `opportunities` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+**Also called:** revenue, closed revenue, sales.
+
+
+======================================================================
+Answer EACH of the following business questions INDEPENDENTLY (do not let one question influence another). For each question return a SINGLE DuckDB SQL query string that answers it directly.
+
+Return ONE JSON object mapping each question id to its answer, e.g. {"q1": "SELECT ...", "q2": "SELECT ..."}
+
+QUESTIONS:
+  [s4_attain_by_region] What is the average quota attainment by sales region?
+  [s4_revenue_by_region] What was total closed revenue by sales region?
+  [s4_attain_advneg] What is the average quota attainment among reps who have completed the Advanced Negotiation course?
+  [s4_attain_no_advneg] What is the average quota attainment among reps who have NOT completed the Advanced Negotiation course?
+  [s4_attain_by_advneg] Compare average quota attainment for reps who did versus did not complete Advanced Negotiation.
+  [s4_assess_emea] What is the average assessment score of reps in the EMEA region?
+  [s4_attain_emea] What is the average quota attainment of reps in EMEA?
+  [s4_attain_by_distract] Compare average quota attainment for reps who did versus did not complete Intro to Spreadsheets.
+  [s5_advneg_lift] How many points higher is average quota attainment for reps who completed Advanced Negotiation compared with those who did not?
+  [s4_unans_manager] What is the average quota attainment broken down by each rep's direct manager?
+  [s4_unans_age] What is the average assessment score by learner age band?

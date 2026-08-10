@@ -1,0 +1,118 @@
+# D1 (NorthStar Commerce) questions. Business language only. Ground truth = certified model.
+# answer_type: scalar (numeric, 1% tol) | topn (set) | refusal | clarify | identity
+
+# ============ Suite 1 — Certified Metrics ============
+- {id: s1_netrev,        suite: 1, dataset: d1, answer_type: scalar, group: netrev,
+   text: "What was our total net revenue?",
+   truth_plan: {measures: [net_revenue]}}
+- {id: s1_netrev_p2,     suite: 1, dataset: d1, answer_type: scalar, group: netrev,
+   text: "How much did we actually earn from sales, after discounts and excluding cancelled and returned orders?",
+   truth_plan: {measures: [net_revenue]}}
+- {id: s1_netrev_p3,     suite: 1, dataset: d1, answer_type: scalar, group: netrev,
+   text: "What is our certified revenue figure for the whole period?",
+   truth_plan: {measures: [net_revenue]}}
+- {id: s1_aov,           suite: 1, dataset: d1, answer_type: scalar, group: aov,
+   text: "What is our average order value?",
+   truth_plan: {measures: [aov]}}
+- {id: s1_aov_p2,        suite: 1, dataset: d1, answer_type: scalar, group: aov,
+   text: "On average, how much revenue does a single order bring in?",
+   truth_plan: {measures: [aov]}}
+- {id: s1_aov_p3,        suite: 1, dataset: d1, answer_type: scalar, group: aov,
+   text: "What's the typical value of an order for us?",
+   truth_plan: {measures: [aov]}}
+- {id: s1_margin,        suite: 1, dataset: d1, answer_type: scalar,
+   text: "What was our total gross margin?",
+   truth_plan: {measures: [gross_margin]}}
+- {id: s1_active_cust,   suite: 1, dataset: d1, answer_type: scalar, group: active,
+   text: "How many active customers do we have?",
+   truth_plan: {measures: [active_customers]}}
+- {id: s1_active_p2,     suite: 1, dataset: d1, answer_type: scalar, group: active,
+   text: "How many distinct customers actually placed a fulfilled order?",
+   truth_plan: {measures: [active_customers]}}
+- {id: s1_active_p3,     suite: 1, dataset: d1, answer_type: scalar, group: active,
+   text: "What's our count of customers who bought something that shipped?",
+   truth_plan: {measures: [active_customers]}}
+- {id: s1_gross_rev,     suite: 1, dataset: d1, answer_type: scalar,
+   text: "What was our gross revenue, before any discounts were applied?",
+   truth_plan: {measures: [gross_revenue]}}
+- {id: s1_orders,        suite: 1, dataset: d1, answer_type: scalar,
+   text: "How many orders did we ship or deliver?",
+   truth_plan: {measures: [order_count]}}
+# identity trap: names are not unique (40 distinct customers all named John Smith)
+- {id: s1_top_customer,  suite: 1, dataset: d1, answer_type: scalar,
+   text: "Who is our single highest-spending customer, and how much did they spend? (we want the actual top individual)",
+   truth_plan: {measures: [net_revenue], dimensions: [customer_id], order_by: {field: net_revenue, dir: desc}, limit: 1}}
+
+# ============ Suite 2 — Grain & Fan-Out ============
+- {id: s2_shipping_total, suite: 2, dataset: d1, answer_type: scalar,
+   text: "What did we collect in total shipping fees across all fulfilled orders?",
+   truth_plan: {measures: [shipping_fee_total]}}
+- {id: s2_shipping_region, suite: 2, dataset: d1, answer_type: topn,
+   text: "What were total shipping fees by shipping region?",
+   truth_plan: {measures: [shipping_fee_total], dimensions: [ship_region]}}
+- {id: s2_rev_and_ship,   suite: 2, dataset: d1, answer_type: topn,
+   text: "For each region, show net revenue and total shipping fees side by side.",
+   truth_plan: {measures: [net_revenue, shipping_fee_total], dimensions: [ship_region]}}
+- {id: s2_lines,          suite: 2, dataset: d1, answer_type: scalar,
+   text: "How many individual order lines (items) did we fulfil in total?",
+   truth_plan: {measures: [line_count]}}
+- {id: s2_ship_pct,       suite: 2, dataset: d1, answer_type: scalar,
+   text: "Across the business, what were total shipping fees as a percentage of net revenue?",
+   truth_sql: "SELECT 100.0*(SELECT SUM(shipping_fee) FROM orders WHERE status IN (3,4))/(SELECT SUM(quantity*unit_price*(1-discount_rate)) FROM order_items oi JOIN orders o USING(order_id) WHERE o.status IN (3,4))"}
+- {id: s2_avg_line_disc,  suite: 2, dataset: d1, answer_type: scalar,
+   text: "What is the average shipping fee per fulfilled order?",
+   truth_sql: "SELECT AVG(shipping_fee) FROM orders WHERE status IN (3,4)"}
+
+# ============ Suite 3 — Compound Keys (returns keyed by order_id + line_number) ============
+- {id: s3_refund_total,   suite: 3, dataset: d1, answer_type: scalar,
+   text: "What is the total value of all refunds we issued?",
+   truth_plan: {measures: [refund_total]}}
+- {id: s3_refund_by_cat,  suite: 3, dataset: d1, answer_type: topn,
+   text: "What were total refunds broken down by product category?",
+   truth_plan: {measures: [refund_total], dimensions: [product_category]}}
+- {id: s3_refund_units,   suite: 3, dataset: d1, answer_type: scalar,
+   text: "How many units were returned in total?",
+   truth_plan: {measures: [refund_qty]}}
+- {id: s3_net_of_refunds, suite: 3, dataset: d1, answer_type: scalar,
+   text: "What is our net revenue after subtracting refunds?",
+   truth_sql: "SELECT (SELECT SUM(quantity*unit_price*(1-discount_rate)) FROM order_items oi JOIN orders o USING(order_id) WHERE o.status IN (3,4)) - (SELECT SUM(refund_amount) FROM returns)"}
+- {id: s3_refund_rev_by_cat, suite: 3, dataset: d1, answer_type: topn,
+   text: "For each product category, show net revenue and total refunds side by side.",
+   truth_plan: {measures: [net_revenue, refund_total], dimensions: [product_category]}}
+
+# ============ Suite 5 — Multi-query synthesis (mixed grain ratio) ============
+- {id: s5_ship_pct_region, suite: 5, dataset: d1, answer_type: topn,
+   text: "For each region, what were shipping fees as a percentage of net revenue?",
+   truth_sql: "SELECT s.ship_region, 100.0*s.ship/r.rev AS pct FROM (SELECT ship_region, SUM(shipping_fee) ship FROM orders WHERE status IN (3,4) GROUP BY 1) s JOIN (SELECT o.ship_region, SUM(oi.quantity*oi.unit_price*(1-oi.discount_rate)) rev FROM order_items oi JOIN orders o USING(order_id) WHERE o.status IN (3,4) GROUP BY 1) r USING(ship_region)"}
+
+# ============ Suite 7 — Ambiguity, vocabulary & refusal ============
+- {id: s7_vocab_paidsearch, suite: 7, dataset: d1, answer_type: scalar,
+   text: "How much net revenue came from orders acquired through paid search?",
+   truth_plan: {measures: [net_revenue], filters: [{field: order_channel, op: "=", value: "Paid Search"}]}}
+- {id: s7_vocab_paidsearch_orders, suite: 7, dataset: d1, answer_type: scalar,
+   text: "How many fulfilled orders came through the paid search channel?",
+   truth_plan: {measures: [order_count], filters: [{field: order_channel, op: "=", value: "Paid Search"}]}}
+- {id: s7_unans_age,     suite: 7, dataset: d1, answer_type: refusal, conditions: [U,D,G,S],
+   text: "What is our net revenue broken down by customer age group?"}
+- {id: s7_unans_supplier, suite: 7, dataset: d1, answer_type: refusal, conditions: [U,D,G,S],
+   text: "Which supplier accounts for the most revenue?"}
+- {id: s7_unans_weather, suite: 7, dataset: d1, answer_type: refusal, conditions: [U,D,G,S],
+   text: "How does rainy weather affect our daily sales?"}
+- {id: s7_ambiguous_sales, suite: 7, dataset: d1, answer_type: clarify, conditions: [U,D,G,S],
+   text: "How many sales did we have?"}
+- {id: s7_ambiguous_best,  suite: 7, dataset: d1, answer_type: clarify, conditions: [U,D,G,S],
+   text: "What's our best product?"}
+
+# ============ Suite 8 — Time intelligence (calendar vs Feb-start fiscal) ============
+- {id: s8_rev_2024,      suite: 8, dataset: d1, answer_type: scalar,
+   text: "What was net revenue in calendar year 2024?",
+   truth_plan: {measures: [net_revenue], filters: [{field: order_year, op: "=", value: "2024-01-01"}]}}
+- {id: s8_rev_fy2024,    suite: 8, dataset: d1, answer_type: scalar,
+   text: "What was net revenue in fiscal year 2024? (our fiscal year starts February 1)",
+   truth_plan: {measures: [net_revenue], filters: [{field: fiscal_year, op: "=", value: "2024-01-01"}]}}
+- {id: s8_rev_by_month,  suite: 8, dataset: d1, answer_type: topn,
+   text: "Show net revenue by calendar month for 2024.",
+   truth_plan: {measures: [net_revenue], dimensions: [order_month], filters: [{field: order_year, op: "=", value: "2024-01-01"}]}}
+- {id: s8_rev_2023,      suite: 8, dataset: d1, answer_type: scalar,
+   text: "What was net revenue in calendar year 2023?",
+   truth_plan: {measures: [net_revenue], filters: [{field: order_year, op: "=", value: "2023-01-01"}]}}

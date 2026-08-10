@@ -1,0 +1,17 @@
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+
+# Superseded run history (final numbers live in results/)
+results_v1/
+results_v2/
+results_v3/
+
+# Local env / secrets
+.env
+*.env
+
+# OS / editor
+.DS_Store
+.ipynb_checkpoints/

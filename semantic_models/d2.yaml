@@ -1,0 +1,73 @@
+dataset: d2
+title: Cross-Domain Enterprise (Learning x Sales x HR)
+description: >
+  Three source systems that share no obvious key. Sales opportunities are keyed by
+  employee_id; the LMS (learners, completions, assessments) is keyed by a messy email;
+  the HR bridge is the ONLY path between them, and only after email normalization
+  (lowercase, strip the legacy '.contractor' alias). The certified rep_course_flags
+  rollup resolves that identity join once.
+grain_note: >
+  opportunities is one row per rep (quarter). assessment_scores is one row per
+  (learner, course). A learner maps to exactly one employee via the normalized email
+  bridge. Grouping attainment by a course flag requires the certified per-rep rollup.
+
+# directed many-to-one edges (child -> parent). The email edge encodes normalization.
+join_graph:
+  - {from: opportunities,    to: hr_bridge,        on_sql: "opportunities.employee_id = hr_bridge.employee_id"}
+  - {from: opportunities,    to: rep_course_flags, on_sql: "opportunities.employee_id = rep_course_flags.employee_id"}
+  - {from: assessment_scores, to: learners,        on_sql: "assessment_scores.learner_id = learners.learner_id"}
+  - {from: assessment_scores, to: courses,         on_sql: "assessment_scores.course_id = courses.course_id"}
+  - {from: learners,         to: hr_bridge,        on_sql: "lower(replace(learners.email,'.contractor','')) = lower(hr_bridge.work_email)"}
+
+dimensions:
+  sales_region:       {source: hr_bridge, sql: "hr_bridge.region", type: string,
+                       description: "Sales region of the rep (from HR, the certified source of region)."}
+  tenure_years:       {source: hr_bridge, sql: "hr_bridge.tenure_years", type: number,
+                       description: "Rep tenure in years (a known confounder for attainment)."}
+  completed_advneg:   {source: rep_course_flags, sql: "rep_course_flags.completed_advneg", type: bool,
+                       description: "TRUE if the rep completed the 'Advanced Negotiation' course. Resolved via the certified identity bridge."}
+  completed_distract: {source: rep_course_flags, sql: "rep_course_flags.completed_distract", type: bool,
+                       description: "TRUE if the rep completed 'Intro to Spreadsheets' (a control/placebo course)."}
+  course_name:        {source: courses, sql: "courses.course_name", type: string,
+                       description: "Name of the course an assessment belongs to."}
+
+measures:
+  avg_quota_attainment:
+    base: opportunities
+    agg_sql: "AVG(opportunities.quota_attainment)"
+    description: "Average quota attainment across reps (1.0 = met quota). Certified from CRM."
+    synonyms: ["attainment", "average attainment", "quota attainment"]
+  total_revenue:
+    base: opportunities
+    agg_sql: "SUM(opportunities.closed_revenue)"
+    description: "Total closed revenue across reps."
+    synonyms: ["revenue", "closed revenue", "sales"]
+  rep_count:
+    base: opportunities
+    agg_sql: "COUNT(DISTINCT opportunities.employee_id)"
+    description: "Number of distinct reps."
+    synonyms: ["number of reps", "headcount"]
+  avg_assessment_score:
+    base: assessment_scores
+    agg_sql: "AVG(assessment_scores.score)"
+    description: "Average LMS assessment score (0-100). Joins to reps only through the certified email-normalization bridge."
+    synonyms: ["assessment score", "test score", "average score"]
+  # --- Certified contrast promoted by the architect (v2): the Advanced Negotiation lift ---
+  attainment_advneg_yes:
+    base: opportunities
+    agg_sql: "AVG(opportunities.quota_attainment)"
+    filter_sql: "rep_course_flags.completed_advneg = TRUE"
+    join_required: [rep_course_flags]
+    description: "Average quota attainment among reps who COMPLETED Advanced Negotiation."
+  attainment_advneg_no:
+    base: opportunities
+    agg_sql: "AVG(opportunities.quota_attainment)"
+    filter_sql: "rep_course_flags.completed_advneg = FALSE"
+    join_required: [rep_course_flags]
+    description: "Average quota attainment among reps who did NOT complete Advanced Negotiation."
+  advneg_attainment_lift:
+    base: opportunities
+    expr: "attainment_advneg_yes - attainment_advneg_no"
+    components: [attainment_advneg_yes, attainment_advneg_no]
+    description: "The lift in average quota attainment for reps who completed Advanced Negotiation versus those who did not (completers minus non-completers). Use this for 'how many points higher'."
+    synonyms: ["advanced negotiation lift", "attainment lift", "how much higher attainment"]

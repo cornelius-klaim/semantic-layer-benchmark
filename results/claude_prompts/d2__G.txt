@@ -1,0 +1,121 @@
+You are a senior data analyst. You are given the schema plus a CERTIFIED SEMANTIC MODEL — use these definitions exactly.
+
+DATABASE SCHEMA (DDL):
+CREATE TABLE hr_bridge (
+  employee_id BIGINT,
+  work_email VARCHAR,
+  region VARCHAR,
+  tenure_years BIGINT
+);
+
+CREATE TABLE sales_reps (
+  employee_id BIGINT,
+  rep_name VARCHAR,
+  sales_region VARCHAR
+);
+
+CREATE TABLE opportunities (
+  opp_id BIGINT,
+  employee_id BIGINT,
+  quarter VARCHAR,
+  closed_revenue DOUBLE,
+  quota_attainment DOUBLE
+);
+
+CREATE TABLE learners (
+  learner_id BIGINT,
+  email VARCHAR
+);
+
+CREATE TABLE courses (
+  course_id BIGINT,
+  course_name VARCHAR
+);
+
+CREATE TABLE course_completions (
+  learner_id BIGINT,
+  course_id BIGINT
+);
+
+CREATE TABLE assessment_scores (
+  learner_id BIGINT,
+  course_id BIGINT,
+  score DOUBLE
+);
+
+
+CERTIFIED SEMANTIC MODEL:
+
+# SEMANTIC MODEL (structured) — Cross-Domain Enterprise (Learning x Sales x HR)
+# Three source systems that share no obvious key. Sales opportunities are keyed by employee_id; the LMS (learners, completions, assessments) is keyed by a messy email; the HR bridge is the ONLY path between them, and only after email normalization (lowercase, strip the legacy '.contractor' alias). The certified rep_course_flags rollup resolves that identity join once.
+# GRAIN: opportunities is one row per rep (quarter). assessment_scores is one row per (learner, course). A learner maps to exactly one employee via the normalized email bridge. Grouping attainment by a course flag requires the certified per-rep rollup.
+
+JOINS (child -> parent, many-to-one):
+  opportunities -> hr_bridge  ON opportunities.employee_id = hr_bridge.employee_id  [many_to_one]
+  opportunities -> rep_course_flags  ON opportunities.employee_id = rep_course_flags.employee_id  [many_to_one]
+  assessment_scores -> learners  ON assessment_scores.learner_id = learners.learner_id  [many_to_one]
+  assessment_scores -> courses  ON assessment_scores.course_id = courses.course_id  [many_to_one]
+  learners -> hr_bridge  ON lower(replace(learners.email,'.contractor','')) = lower(hr_bridge.work_email)  [many_to_one]
+
+VOCABULARY (business term -> stored values):
+
+DIMENSIONS:
+  sales_region (source hr_bridge, string): sql = hr_bridge.region
+     -- Sales region of the rep (from HR, the certified source of region).
+  tenure_years (source hr_bridge, number): sql = hr_bridge.tenure_years
+     -- Rep tenure in years (a known confounder for attainment).
+  completed_advneg (source rep_course_flags, bool): sql = rep_course_flags.completed_advneg
+     -- TRUE if the rep completed the 'Advanced Negotiation' course. Resolved via the certified identity bridge.
+  completed_distract (source rep_course_flags, bool): sql = rep_course_flags.completed_distract
+     -- TRUE if the rep completed 'Intro to Spreadsheets' (a control/placebo course).
+  course_name (source courses, string): sql = courses.course_name
+     -- Name of the course an assessment belongs to.
+
+MEASURES (certified; each additive at its base grain):
+  avg_quota_attainment (base grain: opportunities):
+     agg    = AVG(opportunities.quota_attainment)
+     -- Average quota attainment across reps (1.0 = met quota). Certified from CRM.
+     synonyms: ['attainment', 'average attainment', 'quota attainment']
+  total_revenue (base grain: opportunities):
+     agg    = SUM(opportunities.closed_revenue)
+     -- Total closed revenue across reps.
+     synonyms: ['revenue', 'closed revenue', 'sales']
+  rep_count (base grain: opportunities):
+     agg    = COUNT(DISTINCT opportunities.employee_id)
+     -- Number of distinct reps.
+     synonyms: ['number of reps', 'headcount']
+  avg_assessment_score (base grain: assessment_scores):
+     agg    = AVG(assessment_scores.score)
+     -- Average LMS assessment score (0-100). Joins to reps only through the certified email-normalization bridge.
+     synonyms: ['assessment score', 'test score', 'average score']
+  attainment_advneg_yes (base grain: opportunities):
+     agg    = AVG(opportunities.quota_attainment)
+     filter = rep_course_flags.completed_advneg = TRUE
+     -- Average quota attainment among reps who COMPLETED Advanced Negotiation.
+  attainment_advneg_no (base grain: opportunities):
+     agg    = AVG(opportunities.quota_attainment)
+     filter = rep_course_flags.completed_advneg = FALSE
+     -- Average quota attainment among reps who did NOT complete Advanced Negotiation.
+  advneg_attainment_lift (DERIVED): attainment_advneg_yes - attainment_advneg_no
+     components: attainment_advneg_yes, attainment_advneg_no
+     -- The lift in average quota attainment for reps who completed Advanced Negotiation versus those who did not (completers minus non-completers). Use this for 'how many points higher'.
+     synonyms: ['advanced negotiation lift', 'attainment lift', 'how much higher attainment']
+
+
+======================================================================
+Answer EACH of the following business questions INDEPENDENTLY (do not let one question influence another). For each question return a SINGLE DuckDB SQL query string that answers it directly.
+
+Return ONE JSON object mapping each question id to its answer, e.g. {"q1": "SELECT ...", "q2": "SELECT ..."}
+
+QUESTIONS:
+  [s4_attain_by_region] What is the average quota attainment by sales region?
+  [s4_revenue_by_region] What was total closed revenue by sales region?
+  [s4_attain_advneg] What is the average quota attainment among reps who have completed the Advanced Negotiation course?
+  [s4_attain_no_advneg] What is the average quota attainment among reps who have NOT completed the Advanced Negotiation course?
+  [s4_attain_by_advneg] Compare average quota attainment for reps who did versus did not complete Advanced Negotiation.
+  [s4_assess_emea] What is the average assessment score of reps in the EMEA region?
+  [s4_attain_emea] What is the average quota attainment of reps in EMEA?
+  [s4_attain_by_distract] Compare average quota attainment for reps who did versus did not complete Intro to Spreadsheets.
+  [s5_advneg_lift] How many points higher is average quota attainment for reps who completed Advanced Negotiation compared with those who did not?
+  [s4_unans_manager] What is the average quota attainment broken down by each rep's direct manager?
+  [s4_unans_age] What is the average assessment score by learner age band?

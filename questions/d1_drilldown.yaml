@@ -1,0 +1,29 @@
+# Suite 9 — The Drill-Down Trap. Condition P sees ONLY pre-aggregated gold tables
+# (gold_revenue_by_region_month, gold_sales_by_category). The DRILL-DOWN questions need detail
+# below those grains (a specific customer, a channel, a region x category cross, distinct customers)
+# and cannot be answered from the aggregates — a faithful gold layer must decline. Condition S has
+# the base-grain semantic model and can drill. The CONTROL questions ARE answerable from the gold
+# tables (both P and S get them). Ground truth is base-grain, by construction.
+# conditions restricted to U (raw base ref), P (gold trap), S (semantic layer).
+
+# ---- drill-down: needs sub-grain detail the gold tables discarded ----
+- {id: dd_top_customer, suite: 9, dataset: d1, answer_type: scalar, conditions: [U,P0,P,S],
+   text: "Who is our single highest-spending customer, and how much did they spend?",
+   truth_plan: {measures: [net_revenue], dimensions: [customer_id], order_by: {field: net_revenue, dir: desc}, limit: 1}}
+- {id: dd_paidsearch, suite: 9, dataset: d1, answer_type: scalar, conditions: [U,P0,P,S],
+   text: "How much net revenue came from orders acquired through paid search?",
+   truth_plan: {measures: [net_revenue], filters: [{field: order_channel, op: "=", value: "Paid Search"}]}}
+- {id: dd_active_customers, suite: 9, dataset: d1, answer_type: scalar, conditions: [U,P0,P,S],
+   text: "How many distinct customers placed a fulfilled order?",
+   truth_plan: {measures: [active_customers]}}
+- {id: dd_region_by_category, suite: 9, dataset: d1, answer_type: topn, conditions: [U,P0,P,S],
+   text: "For the West region only, what was net revenue broken down by product category?",
+   truth_plan: {measures: [net_revenue], dimensions: [product_category], filters: [{field: ship_region, op: "=", value: "West"}]}}
+
+# ---- controls: answerable FROM the gold tables (both P and S should get these) ----
+- {id: dd_ctrl_rev_by_region, suite: 9, dataset: d1, answer_type: topn, conditions: [U,P0,P,S],
+   text: "What was total net revenue by shipping region?",
+   truth_plan: {measures: [net_revenue], dimensions: [ship_region]}}
+- {id: dd_ctrl_rev_by_category, suite: 9, dataset: d1, answer_type: topn, conditions: [U,P0,P,S],
+   text: "What was net revenue by product category?",
+   truth_plan: {measures: [net_revenue], dimensions: [product_category]}}

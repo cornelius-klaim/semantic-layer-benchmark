@@ -1,0 +1,81 @@
+=== Accuracy (%) by model x condition ===
+condition                 U      D      G      S
+model                                           
+claude-haiku           21.3   80.9   83.0   85.1
+claude-opus            14.9   85.1   85.1   87.2
+claude-sonnet          19.1   83.0   85.1   89.4
+gemini-2.5-flash       16.0   77.6   80.8   83.2
+gemini-2.5-flash-lite  16.0   61.6   69.6   83.6
+gemini-2.5-pro         15.7   98.0   92.2  100.0
+gemini-3.5-flash       16.4  100.0  100.0  100.0
+
+=== Accuracy (%) by suite x condition (models pooled) ===
+condition     U     D      G      S
+suite                              
+1          11.4  95.4   96.9   99.6
+2          14.4  81.1   78.9   65.6
+3          60.0  90.8   98.5   80.0
+4          37.5  87.5   90.4  100.0
+5           0.0  73.1   80.8    0.0
+6           0.0  63.3   60.0   60.0
+7           1.7  17.9   18.8   84.6
+8           0.0  71.2  100.0  100.0
+
+=== U -> D -> G -> S ladder (all pooled) ===
+condition
+U    16.5
+D    76.3
+G    79.9
+S    86.4
+
+=== Error magnitude on wrong numeric answers (n=397) ===
+  median rel err: 45.1%   mean: 88.6%   p90: 100.0%
+  median rel err by condition: {'D': 66.8, 'G': 99.0, 'S': 471.5, 'U': 45.1}
+
+=== Mean tokens & latency by condition ===
+           prompt_tokens  out_tokens  latency
+condition                                    
+D                 2467.3        75.7      2.2
+G                 1426.2        75.6      2.0
+S                  580.8        32.5      1.3
+U                  266.3        70.0      3.1
+
+=== SQL audit flags (count by condition) ===
+condition  flag                        
+D          fanout_orderfee_over_lines       43
+           grouped_by_name_not_identity     16
+           missing_status_filter            15
+           partial_key_returns_fanout        6
+G          fanout_orderfee_over_lines       38
+           grouped_by_name_not_identity     16
+           partial_key_returns_fanout        7
+U          email_join_no_normalize          29
+           fanout_orderfee_over_lines       41
+           grouped_by_name_not_identity     16
+           missing_status_filter           199
+           partial_key_returns_fanout       13
+           used_wrong_line_total           335
+
+=== Cross-phrasing consistency (accuracy within phrasing group) ===
+condition      D      G      S     U
+group                               
+active     100.0  100.0  100.0  43.0
+aov         92.0   92.0  100.0   0.0
+netrev     100.0   98.0  100.0   0.0
+
+=== Multi-turn accuracy by turn (drift) ===
+condition    U      D      G      S
+turn                               
+1.0        0.0  100.0  100.0  100.0
+2.0        0.0  100.0  100.0  100.0
+3.0        0.0    0.0    0.0    0.0
+4.0        0.0   17.0    0.0    0.0
+5.0        0.0  100.0  100.0  100.0
+
+=== Accuracy by dataset x condition ===
+condition     U     D     G     S
+dataset                          
+d1         13.9  77.3  80.9  85.3
+d2         27.3  72.0  75.5  90.9
+
+Total scored runs: 2981  -> results/scored.csv

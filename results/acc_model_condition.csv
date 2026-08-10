@@ -1,0 +1,8 @@
+model,U,D,G,S
+claude-haiku,21.3,80.9,83.0,85.1
+claude-opus,14.9,85.1,85.1,87.2
+claude-sonnet,19.1,83.0,85.1,89.4
+gemini-2.5-flash,16.0,78.0,80.8,84.4
+gemini-2.5-flash-lite,16.0,61.6,69.6,84.8
+gemini-2.5-pro,15.7,98.0,92.2,100.0
+gemini-3.5-flash,16.4,100.0,100.0,100.0

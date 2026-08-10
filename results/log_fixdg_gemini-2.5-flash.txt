@@ -1,0 +1,8 @@
+  s7_unans_age     done (6 runs so far)
+  s7_unans_supplier done (12 runs so far)
+  s7_unans_weather done (18 runs so far)
+  s7_ambiguous_sales done (24 runs so far)
+  s7_ambiguous_best done (30 runs so far)
+  s4_unans_manager done (36 runs so far)
+  s4_unans_age     done (42 runs so far)
+TOTAL runs logged: 42 -> results/runs_fixdg_gemini-2.5-flash.jsonl

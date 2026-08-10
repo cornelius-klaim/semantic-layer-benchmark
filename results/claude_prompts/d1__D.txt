@@ -1,0 +1,438 @@
+You are a senior data analyst. You are given the schema plus a KNOWLEDGE BASE that defines the business meaning of the data — read it carefully and apply it.
+
+DATABASE SCHEMA (DDL):
+CREATE TABLE customers (
+  customer_id BIGINT,
+  region VARCHAR,
+  acquisition_channel VARCHAR,
+  full_name VARCHAR,
+  email VARCHAR
+);
+
+CREATE TABLE products (
+  product_key BIGINT,
+  product_name VARCHAR,
+  category VARCHAR,
+  unit_cost DOUBLE,
+  list_price DOUBLE
+);
+
+CREATE TABLE orders (
+  order_id BIGINT,
+  customer_key BIGINT,
+  order_ts TIMESTAMP,
+  status BIGINT,
+  ship_region VARCHAR,
+  shipping_fee DOUBLE,
+  channel VARCHAR
+);
+
+CREATE TABLE order_items (
+  order_id BIGINT,
+  line_number BIGINT,
+  product_key BIGINT,
+  quantity BIGINT,
+  unit_price DOUBLE,
+  discount_rate DOUBLE,
+  line_total DOUBLE
+);
+
+CREATE TABLE marketing_spend (
+  spend_month TIMESTAMP,
+  channel VARCHAR,
+  spend DOUBLE
+);
+
+
+CREATE TABLE returns (
+  order_id BIGINT,
+  line_number BIGINT,
+  return_qty BIGINT,
+  refund_amount DOUBLE,
+  return_reason VARCHAR
+);
+
+
+KNOWLEDGE BASE:
+
+<!-- FILE: index.md -->
+---
+type: dataset
+title: NorthStar Commerce
+resource: d1
+tags: [retail, sales]
+---
+# NorthStar Commerce
+Line-item retail sales joined to orders, customers, and products. The certified revenue surface. Shipping fees live at ORDER grain; discounts at LINE grain.
+
+## Grain
+order_items is one row per order LINE, keyed by (order_id, line_number). orders is one row per order. Summing an order-grain measure (shipping_fee) across joined lines fans out.
+
+## Concept documents
+- Tables: [customers](./table_customers.md), [marketing_spend](./table_marketing_spend.md), [order_items](./table_order_items.md), [orders](./table_orders.md), [products](./table_products.md), [returns](./table_returns.md)
+- Metrics: [net_revenue](./metric_net_revenue.md), [gross_revenue](./metric_gross_revenue.md), [order_count](./metric_order_count.md), [line_count](./metric_line_count.md), [aov](./metric_aov.md), [gross_margin](./metric_gross_margin.md), [active_customers](./metric_active_customers.md), [shipping_fee_total](./metric_shipping_fee_total.md), [marketing_spend_total](./metric_marketing_spend_total.md), [refund_total](./metric_refund_total.md), [refund_qty](./metric_refund_qty.md), [avg_shipping_fee](./metric_avg_shipping_fee.md), [shipping_pct_of_revenue](./metric_shipping_pct_of_revenue.md), [net_revenue_after_refunds](./metric_net_revenue_after_refunds.md)
+
+## Joins
+- `order_items` relates to `orders` as **many-to-one**, joined on `order_items.order_id = orders.order_id`. Because it is many-to-one, aggregating a `orders`-grain measure across joined `order_items` rows will double-count (fan-out).
+- `order_items` relates to `products` as **many-to-one**, joined on `order_items.product_key = products.product_key`. Because it is many-to-one, aggregating a `products`-grain measure across joined `order_items` rows will double-count (fan-out).
+- `orders` relates to `customers` as **many-to-one**, joined on `orders.customer_key = customers.customer_id`. Because it is many-to-one, aggregating a `customers`-grain measure across joined `orders` rows will double-count (fan-out).
+- `returns` relates to `order_items` as **many-to-one**, joined on `returns.order_id = order_items.order_id AND returns.line_number = order_items.line_number`. Because it is many-to-one, aggregating a `order_items`-grain measure across joined `returns` rows will double-count (fan-out).
+
+## Vocabulary
+### channel
+Marketing channel. Stored inconsistently across tables.
+
+- The business term **Paid Search** is stored as `paid_search`, `Paid-Search`, `PPC` across different tables.
+- The business term **Organic** is stored as `organic`, `Organic` across different tables.
+- The business term **Referral** is stored as `referral`, `Referral` across different tables.
+- The business term **Social** is stored as `social`, `Social` across different tables.
+- The business term **Email** is stored as `email`, `Email` across different tables.
+
+
+<!-- FILE: table_customers.md -->
+---
+type: table
+title: customers
+resource: d1.customers
+tags: [schema]
+---
+# Table: `customers`
+
+| field | type | meaning |
+|---|---|---|
+| `customer_name` | string | Customer display name. A LABEL on the customer identity, not the identity. Names are not unique. This is a display LABEL for the customer and is NOT unique — never aggregate by it. (expression: `customers.full_name`) |
+
+
+<!-- FILE: table_orders.md -->
+---
+type: table
+title: orders
+resource: d1.orders
+tags: [schema]
+---
+# Table: `orders`
+
+| field | type | meaning |
+|---|---|---|
+| `ship_region` | string | Region the order shipped to. (expression: `orders.ship_region`) |
+| `order_status` | string | Human-readable order status decoded from the raw integer code. (expression: `CASE orders.status WHEN 1 THEN 'pending' WHEN 2 THEN 'paid' WHEN 3 THEN 'shipped' WHEN 4 THEN 'delivered' WHEN 5 THEN 'cancelled' WHEN 6 THEN 'returned' END`) |
+| `order_month` | date |  (expression: `date_trunc('month', orders.order_ts)`) |
+| `order_year` | date |  (expression: `date_trunc('year', orders.order_ts)`) |
+| `fiscal_year` | date | Fiscal year (fiscal year starts Feb 1; shift +11 months). (expression: `date_trunc('year', orders.order_ts + INTERVAL 11 MONTH)`) |
+| `order_channel` | string | Marketing channel on the order (messy stored values). (expression: `orders.channel`) |
+| `customer_id` | id | Customer identity key. THE identifier for a customer. This is the IDENTITY of the customer; group and count by this, not by any name. (expression: `orders.customer_key`) |
+
+
+<!-- FILE: table_products.md -->
+---
+type: table
+title: products
+resource: d1.products
+tags: [schema]
+---
+# Table: `products`
+
+| field | type | meaning |
+|---|---|---|
+| `product_category` | string | Product category. (expression: `products.category`) |
+| `product_name` | string |  (expression: `products.product_name`) |
+
+
+<!-- FILE: metric_active_customers.md -->
+---
+type: metric
+title: active_customers
+resource: d1.metric.active_customers
+tags: [certified]
+---
+# Metric: active_customers
+
+Distinct customers with at least one shipped/delivered order. Counts customer IDENTITY (customer_key), not name.
+
+**Definition.** `COUNT(DISTINCT orders.customer_key)`
+
+**Certified filter (always apply).** `orders.status IN (3,4)`
+
+**Grain.** This measure is additive at the `orders` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+**Also called:** active customers, number of customers, distinct customers.
+
+
+<!-- FILE: metric_aov.md -->
+---
+type: metric
+title: aov
+resource: d1.metric.aov
+tags: [certified]
+---
+# Metric: aov
+
+Average Order Value = net_revenue / order_count. A ratio of two certified measures at different grains — never AVG() over rows.
+
+**Definition.** This is a ratio: `net_revenue` divided by `order_count`. The two components are at different grains, so it must be computed as a ratio of the two certified measures — never as an `AVG()` over rows.
+
+**Also called:** average order value, avg order value.
+
+
+<!-- FILE: metric_avg_shipping_fee.md -->
+---
+type: metric
+title: avg_shipping_fee
+resource: d1.metric.avg_shipping_fee
+tags: [certified]
+---
+# Metric: avg_shipping_fee
+
+Average shipping fee per fulfilled (shipped/delivered) order. Order-grain average.
+
+**Definition.** `AVG(orders.shipping_fee)`
+
+**Certified filter (always apply).** `orders.status IN (3,4)`
+
+**Grain.** This measure is additive at the `orders` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+**Also called:** average shipping fee, avg shipping per order, mean shipping fee per order.
+
+
+<!-- FILE: metric_gross_margin.md -->
+---
+type: metric
+title: gross_margin
+resource: d1.metric.gross_margin
+tags: [certified]
+---
+# Metric: gross_margin
+
+Net revenue minus product cost, at line grain, shipped/delivered only.
+
+**Definition.** `SUM(order_items.quantity * order_items.unit_price * (1 - order_items.discount_rate) - order_items.quantity * products.unit_cost)`
+
+**Certified filter (always apply).** `orders.status IN (3,4)`
+
+**Grain.** This measure is additive at the `order_items` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+**Also called:** margin, profit.
+
+
+<!-- FILE: metric_gross_revenue.md -->
+---
+type: metric
+title: gross_revenue
+resource: d1.metric.gross_revenue
+tags: [certified]
+---
+# Metric: gross_revenue
+
+Revenue before line discounts, shipped/delivered only. Do NOT use the order_items.line_total column (it is pre-discount and unfiltered).
+
+**Definition.** `SUM(order_items.quantity * order_items.unit_price)`
+
+**Certified filter (always apply).** `orders.status IN (3,4)`
+
+**Grain.** This measure is additive at the `order_items` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+
+<!-- FILE: metric_line_count.md -->
+---
+type: metric
+title: line_count
+resource: d1.metric.line_count
+tags: [certified]
+---
+# Metric: line_count
+
+Count of order lines (items), shipped/delivered only.
+
+**Definition.** `COUNT(*)`
+
+**Certified filter (always apply).** `orders.status IN (3,4)`
+
+**Grain.** This measure is additive at the `order_items` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+
+<!-- FILE: metric_marketing_spend_total.md -->
+---
+type: metric
+title: marketing_spend_total
+resource: d1.metric.marketing_spend_total
+tags: [certified]
+---
+# Metric: marketing_spend_total
+
+Total marketing spend by channel/month (separate fact; channel vocab is 'PPC' for paid search).
+
+**Definition.** `SUM(marketing_spend.spend)`
+
+**Grain.** This measure is additive at the `marketing_spend` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+
+<!-- FILE: metric_net_revenue.md -->
+---
+type: metric
+title: net_revenue
+resource: d1.metric.net_revenue
+tags: [certified]
+---
+# Metric: net_revenue
+
+Certified net revenue: quantity x unit_price x (1 - discount), for shipped or delivered orders only. Already EXCLUDES pending, paid-not-shipped, cancelled, and returned orders. This is the right measure for 'what we actually earned after discounts, excluding cancelled and returned orders'. Certified by Finance.
+
+**Definition.** `SUM(order_items.quantity * order_items.unit_price * (1 - order_items.discount_rate))`
+
+**Certified filter (always apply).** `orders.status IN (3,4)`
+
+**Grain.** This measure is additive at the `order_items` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+**Also called:** revenue, net sales, sales, what we actually earned, earnings after discounts.
+
+
+<!-- FILE: metric_net_revenue_after_refunds.md -->
+---
+type: metric
+title: net_revenue_after_refunds
+resource: d1.metric.net_revenue_after_refunds
+tags: [certified]
+---
+# Metric: net_revenue_after_refunds
+
+Net revenue MINUS the dollar value of refunds issued. Use ONLY when the question explicitly asks to subtract refunds/returns dollar amounts. This is NOT the metric for 'excluding cancelled or returned orders' — that exclusion is already built into net_revenue via its status filter; for that phrasing use net_revenue.
+
+**Definition.** This is a certified derived measure: `net_revenue - refund_total`, computed from the certified measures `net_revenue`, `refund_total`. Each component is aggregated at its own grain and then combined — do not re-derive it from raw columns.
+
+**Also called:** net revenue after subtracting refunds, revenue minus refund dollars.
+
+
+<!-- FILE: metric_order_count.md -->
+---
+type: metric
+title: order_count
+resource: d1.metric.order_count
+tags: [certified]
+---
+# Metric: order_count
+
+Count of distinct shipped/delivered orders.
+
+**Definition.** `COUNT(DISTINCT orders.order_id)`
+
+**Certified filter (always apply).** `orders.status IN (3,4)`
+
+**Grain.** This measure is additive at the `orders` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+**Also called:** number of orders, orders.
+
+
+<!-- FILE: metric_refund_qty.md -->
+---
+type: metric
+title: refund_qty
+resource: d1.metric.refund_qty
+tags: [certified]
+---
+# Metric: refund_qty
+
+Total units returned, at (order_id, line_number) grain.
+
+**Definition.** `SUM(returns.return_qty)`
+
+**Grain.** This measure is additive at the `returns` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+**Also called:** units returned, returned quantity.
+
+
+<!-- FILE: metric_refund_total.md -->
+---
+type: metric
+title: refund_total
+resource: d1.metric.refund_total
+tags: [certified]
+---
+# Metric: refund_total
+
+Total refunds. Lives at order-LINE grain, keyed by (order_id, line_number). Joining to lines on order_id alone fans out each refund across the order's lines.
+
+**Definition.** `SUM(returns.refund_amount)`
+
+**Grain.** This measure is additive at the `returns` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+**Also called:** refunds, total refunded, returns value.
+
+
+<!-- FILE: metric_shipping_fee_total.md -->
+---
+type: metric
+title: shipping_fee_total
+resource: d1.metric.shipping_fee_total
+tags: [certified]
+---
+# Metric: shipping_fee_total
+
+Total shipping fees. Lives at ORDER grain — summing it across order lines double-counts (fan-out). Breakable down only by order-level dimensions, never by product.
+
+**Definition.** `SUM(orders.shipping_fee)`
+
+**Certified filter (always apply).** `orders.status IN (3,4)`
+
+**Grain.** This measure is additive at the `orders` grain. Breaking it down by a dimension finer than that grain double-counts.
+
+**Also called:** shipping fees, freight, shipping revenue.
+
+
+<!-- FILE: metric_shipping_pct_of_revenue.md -->
+---
+type: metric
+title: shipping_pct_of_revenue
+resource: d1.metric.shipping_pct_of_revenue
+tags: [certified]
+---
+# Metric: shipping_pct_of_revenue
+
+Total shipping fees as a PERCENTAGE of net revenue. A certified ratio of two measures at different grains (order-grain shipping over line-grain revenue), expressed as a percentage. Breakable down by order-level dimensions such as ship_region.
+
+**Definition.** This is a certified derived measure: `100.0 * shipping_fee_total / NULLIF(net_revenue, 0)`, computed from the certified measures `shipping_fee_total`, `net_revenue`. Each component is aggregated at its own grain and then combined — do not re-derive it from raw columns.
+
+**Also called:** shipping as a percentage of revenue, shipping percent of revenue, shipping cost ratio, shipping to revenue ratio.
+
+
+======================================================================
+Answer EACH of the following business questions INDEPENDENTLY (do not let one question influence another). For each question return a SINGLE DuckDB SQL query string that answers it directly.
+
+Return ONE JSON object mapping each question id to its answer, e.g. {"q1": "SELECT ...", "q2": "SELECT ..."}
+
+QUESTIONS:
+  [s1_netrev] What was our total net revenue?
+  [s1_netrev_p2] How much did we actually earn from sales, after discounts and excluding cancelled and returned orders?
+  [s1_netrev_p3] What is our certified revenue figure for the whole period?
+  [s1_aov] What is our average order value?
+  [s1_aov_p2] On average, how much revenue does a single order bring in?
+  [s1_aov_p3] What's the typical value of an order for us?
+  [s1_margin] What was our total gross margin?
+  [s1_active_cust] How many active customers do we have?
+  [s1_active_p2] How many distinct customers actually placed a fulfilled order?
+  [s1_active_p3] What's our count of customers who bought something that shipped?
+  [s1_gross_rev] What was our gross revenue, before any discounts were applied?
+  [s1_orders] How many orders did we ship or deliver?
+  [s1_top_customer] Who is our single highest-spending customer, and how much did they spend? (we want the actual top individual)
+  [s2_shipping_total] What did we collect in total shipping fees across all fulfilled orders?
+  [s2_shipping_region] What were total shipping fees by shipping region?
+  [s2_rev_and_ship] For each region, show net revenue and total shipping fees side by side.
+  [s2_lines] How many individual order lines (items) did we fulfil in total?
+  [s2_ship_pct] Across the business, what were total shipping fees as a percentage of net revenue?
+  [s2_avg_line_disc] What is the average shipping fee per fulfilled order?
+  [s3_refund_total] What is the total value of all refunds we issued?
+  [s3_refund_by_cat] What were total refunds broken down by product category?
+  [s3_refund_units] How many units were returned in total?
+  [s3_net_of_refunds] What is our net revenue after subtracting refunds?
+  [s3_refund_rev_by_cat] For each product category, show net revenue and total refunds side by side.
+  [s5_ship_pct_region] For each region, what were shipping fees as a percentage of net revenue?
+  [s7_vocab_paidsearch] How much net revenue came from orders acquired through paid search?
+  [s7_vocab_paidsearch_orders] How many fulfilled orders came through the paid search channel?
+  [s7_unans_age] What is our net revenue broken down by customer age group?
+  [s7_unans_supplier] Which supplier accounts for the most revenue?
+  [s7_unans_weather] How does rainy weather affect our daily sales?
+  [s7_ambiguous_sales] How many sales did we have?
+  [s7_ambiguous_best] What's our best product?
+  [s8_rev_2024] What was net revenue in calendar year 2024?
+  [s8_rev_fy2024] What was net revenue in fiscal year 2024? (our fiscal year starts February 1)
+  [s8_rev_by_month] Show net revenue by calendar month for 2024.
+  [s8_rev_2023] What was net revenue in calendar year 2023?

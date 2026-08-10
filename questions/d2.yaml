@@ -1,0 +1,44 @@
+# D2 (Cross-Domain Enterprise) questions. Ground truth = certified model / seeded construction.
+# The differentiator: joining LMS<->Sales requires the HR bridge + email normalization,
+# which U/D/G must reconstruct and S has modeled once.
+
+# ============ Suite 4 — Cross-Domain Correlation & Join ============
+# Clean shared key (employee_id) — answerable by every condition; guards against a rigged bench.
+- {id: s4_attain_by_region, suite: 4, dataset: d2, answer_type: topn,
+   text: "What is the average quota attainment by sales region?",
+   truth_plan: {measures: [avg_quota_attainment], dimensions: [sales_region]}}
+- {id: s4_revenue_by_region, suite: 4, dataset: d2, answer_type: topn,
+   text: "What was total closed revenue by sales region?",
+   truth_plan: {measures: [total_revenue], dimensions: [sales_region]}}
+
+# Messy identity path (LMS email -> HR bridge -> employee) — the differentiator.
+- {id: s4_attain_advneg, suite: 4, dataset: d2, answer_type: scalar,
+   text: "What is the average quota attainment among reps who have completed the Advanced Negotiation course?",
+   truth_plan: {measures: [avg_quota_attainment], filters: [{field: completed_advneg, op: "=", value: true}]}}
+- {id: s4_attain_no_advneg, suite: 4, dataset: d2, answer_type: scalar,
+   text: "What is the average quota attainment among reps who have NOT completed the Advanced Negotiation course?",
+   truth_plan: {measures: [avg_quota_attainment], filters: [{field: completed_advneg, op: "=", value: false}]}}
+- {id: s4_attain_by_advneg, suite: 4, dataset: d2, answer_type: topn,
+   text: "Compare average quota attainment for reps who did versus did not complete Advanced Negotiation.",
+   truth_plan: {measures: [avg_quota_attainment], dimensions: [completed_advneg]}}
+- {id: s4_assess_emea, suite: 4, dataset: d2, answer_type: scalar,
+   text: "What is the average assessment score of reps in the EMEA region?",
+   truth_plan: {measures: [avg_assessment_score], filters: [{field: sales_region, op: "=", value: "EMEA"}]}}
+- {id: s4_attain_emea, suite: 4, dataset: d2, answer_type: scalar,
+   text: "What is the average quota attainment of reps in EMEA?",
+   truth_plan: {measures: [avg_quota_attainment], filters: [{field: sales_region, op: "=", value: "EMEA"}]}}
+# placebo / null-effect course (correct answer: essentially no difference)
+- {id: s4_attain_by_distract, suite: 4, dataset: d2, answer_type: topn,
+   text: "Compare average quota attainment for reps who did versus did not complete Intro to Spreadsheets.",
+   truth_plan: {measures: [avg_quota_attainment], dimensions: [completed_distract]}}
+
+# ============ Suite 5 — Multi-query synthesis (cross-domain difference) ============
+- {id: s5_advneg_lift, suite: 5, dataset: d2, answer_type: scalar,
+   text: "How many points higher is average quota attainment for reps who completed Advanced Negotiation compared with those who did not?",
+   truth_sql: "SELECT (SELECT AVG(quota_attainment) FROM opportunities o JOIN rep_course_flags f USING(employee_id) WHERE f.completed_advneg) - (SELECT AVG(quota_attainment) FROM opportunities o JOIN rep_course_flags f USING(employee_id) WHERE NOT f.completed_advneg)"}
+
+# ============ Suite 7 — Refusal (out-of-model cross-domain) ============
+- {id: s4_unans_manager, suite: 7, dataset: d2, answer_type: refusal, conditions: [U,D,G,S],
+   text: "What is the average quota attainment broken down by each rep's direct manager?"}
+- {id: s4_unans_age, suite: 7, dataset: d2, answer_type: refusal, conditions: [U,D,G,S],
+   text: "What is the average assessment score by learner age band?"}

@@ -1,0 +1,34 @@
+You are querying a GOVERNED SEMANTIC LAYER. You may NOT write SQL. You select fields from the model; the layer generates correct SQL deterministically.
+
+AVAILABLE MEASURES (select by name):
+  - avg_quota_attainment: Average quota attainment across reps (1.0 = met quota). Certified from CRM. (also: attainment, average attainment, quota attainment)
+  - total_revenue: Total closed revenue across reps. (also: revenue, closed revenue, sales)
+  - rep_count: Number of distinct reps. (also: number of reps, headcount)
+  - avg_assessment_score: Average LMS assessment score (0-100). Joins to reps only through the certified email-normalization bridge. (also: assessment score, test score, average score)
+  - attainment_advneg_yes: Average quota attainment among reps who COMPLETED Advanced Negotiation.
+  - attainment_advneg_no: Average quota attainment among reps who did NOT complete Advanced Negotiation.
+  - advneg_attainment_lift: The lift in average quota attainment for reps who completed Advanced Negotiation versus those who did not (completers minus non-completers). Use this for 'how many points higher'. (also: advanced negotiation lift, attainment lift, how much higher attainment)
+AVAILABLE DIMENSIONS (for `dimensions` grouping and `filters`):
+  - sales_region: Sales region of the rep (from HR, the certified source of region).
+  - tenure_years: Rep tenure in years (a known confounder for attainment).
+  - completed_advneg: TRUE if the rep completed the 'Advanced Negotiation' course. Resolved via the certified identity bridge.
+  - completed_distract: TRUE if the rep completed 'Intro to Spreadsheets' (a control/placebo course).
+  - course_name: Name of the course an assessment belongs to.
+
+======================================================================
+Answer EACH of the following business questions INDEPENDENTLY (do not let one question influence another). For each question return a query PLAN: a JSON object with keys "measures" (list of measure names), "dimensions" (list, optional), "filters" (list of {"field":..,"op":"=","value":..}, optional), "order_by" ({"field":..,"dir":"desc"}, optional), "limit" (int, optional). If a question CANNOT be answered from the listed fields, return {"refuse":"<reason>"} for it. If a question is AMBIGUOUS (e.g. "sales" could mean order count or revenue dollars), do NOT guess — return {"refuse":"clarify: ..."}. To identify a top entity, group by its IDENTITY dimension (the one described as THE identifier), never a display-name label.
+
+Return ONE JSON object mapping each question id to its answer, e.g. {"q1": {"measures":["net_revenue"]}, "q2": {"refuse":"no such field"}}
+
+QUESTIONS:
+  [s4_attain_by_region] What is the average quota attainment by sales region?
+  [s4_revenue_by_region] What was total closed revenue by sales region?
+  [s4_attain_advneg] What is the average quota attainment among reps who have completed the Advanced Negotiation course?
+  [s4_attain_no_advneg] What is the average quota attainment among reps who have NOT completed the Advanced Negotiation course?
+  [s4_attain_by_advneg] Compare average quota attainment for reps who did versus did not complete Advanced Negotiation.
+  [s4_assess_emea] What is the average assessment score of reps in the EMEA region?
+  [s4_attain_emea] What is the average quota attainment of reps in EMEA?
+  [s4_attain_by_distract] Compare average quota attainment for reps who did versus did not complete Intro to Spreadsheets.
+  [s5_advneg_lift] How many points higher is average quota attainment for reps who completed Advanced Negotiation compared with those who did not?
+  [s4_unans_manager] What is the average quota attainment broken down by each rep's direct manager?
+  [s4_unans_age] What is the average assessment score by learner age band?

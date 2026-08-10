@@ -1,0 +1,31 @@
+# Suite 6 — Multi-turn conversations. Each conversation is a sequence of turns in ONE
+# chat session. We measure per-turn correctness (drift) and whether the certified metric
+# definition survives context accumulation. Ground truth per turn = certified model.
+- id: conv_grain_drift
+  suite: 6
+  dataset: d1
+  turns:
+    - {t: 1, answer_type: scalar, text: "What was our total net revenue?",
+       truth_plan: {measures: [net_revenue]}}
+    - {t: 2, answer_type: topn, text: "Break that down by shipping region.",
+       truth_plan: {measures: [net_revenue], dimensions: [ship_region]}}
+    - {t: 3, answer_type: topn, text: "Now also show total shipping fees by region.",
+       truth_plan: {measures: [net_revenue, shipping_fee_total], dimensions: [ship_region]}}
+    - {t: 4, answer_type: scalar, text: "Across the whole business, what were shipping fees as a percentage of net revenue?",
+       truth_sql: "SELECT 100.0*(SELECT SUM(shipping_fee) FROM orders WHERE status IN (3,4))/(SELECT SUM(quantity*unit_price*(1-discount_rate)) FROM order_items oi JOIN orders o USING(order_id) WHERE o.status IN (3,4))"}
+    - {t: 5, answer_type: scalar, text: "Going back to the top line — remind me, what was our total net revenue again?",
+       truth_plan: {measures: [net_revenue]}}
+- id: conv_vocab_identity
+  suite: 6
+  dataset: d1
+  turns:
+    - {t: 1, answer_type: scalar, text: "How much net revenue came from paid search?",
+       truth_plan: {measures: [net_revenue], filters: [{field: order_channel, op: "=", value: "Paid Search"}]}}
+    - {t: 2, answer_type: scalar, text: "How many fulfilled orders was that?",
+       truth_plan: {measures: [order_count], filters: [{field: order_channel, op: "=", value: "Paid Search"}]}}
+    - {t: 3, answer_type: scalar, text: "Switching topics — who is our single highest-spending customer, and how much did they spend? We want the actual individual.",
+       truth_plan: {measures: [net_revenue], dimensions: [customer_id], order_by: {field: net_revenue, dir: desc}, limit: 1}}
+    - {t: 4, answer_type: scalar, text: "What was our total gross margin overall?",
+       truth_plan: {measures: [gross_margin]}}
+    - {t: 5, answer_type: scalar, text: "And finally, net revenue for fiscal year 2024? Our fiscal year starts February 1.",
+       truth_plan: {measures: [net_revenue], filters: [{field: fiscal_year, op: "=", value: "2024-01-01"}]}}

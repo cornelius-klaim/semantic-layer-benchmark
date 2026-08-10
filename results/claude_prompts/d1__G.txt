@@ -1,0 +1,199 @@
+You are a senior data analyst. You are given the schema plus a CERTIFIED SEMANTIC MODEL — use these definitions exactly.
+
+DATABASE SCHEMA (DDL):
+CREATE TABLE customers (
+  customer_id BIGINT,
+  region VARCHAR,
+  acquisition_channel VARCHAR,
+  full_name VARCHAR,
+  email VARCHAR
+);
+
+CREATE TABLE products (
+  product_key BIGINT,
+  product_name VARCHAR,
+  category VARCHAR,
+  unit_cost DOUBLE,
+  list_price DOUBLE
+);
+
+CREATE TABLE orders (
+  order_id BIGINT,
+  customer_key BIGINT,
+  order_ts TIMESTAMP,
+  status BIGINT,
+  ship_region VARCHAR,
+  shipping_fee DOUBLE,
+  channel VARCHAR
+);
+
+CREATE TABLE order_items (
+  order_id BIGINT,
+  line_number BIGINT,
+  product_key BIGINT,
+  quantity BIGINT,
+  unit_price DOUBLE,
+  discount_rate DOUBLE,
+  line_total DOUBLE
+);
+
+CREATE TABLE marketing_spend (
+  spend_month TIMESTAMP,
+  channel VARCHAR,
+  spend DOUBLE
+);
+
+
+CREATE TABLE returns (
+  order_id BIGINT,
+  line_number BIGINT,
+  return_qty BIGINT,
+  refund_amount DOUBLE,
+  return_reason VARCHAR
+);
+
+
+CERTIFIED SEMANTIC MODEL:
+
+# SEMANTIC MODEL (structured) — NorthStar Commerce
+# Line-item retail sales joined to orders, customers, and products. The certified revenue surface. Shipping fees live at ORDER grain; discounts at LINE grain.
+# GRAIN: order_items is one row per order LINE, keyed by (order_id, line_number). orders is one row per order. Summing an order-grain measure (shipping_fee) across joined lines fans out.
+
+JOINS (child -> parent, many-to-one):
+  order_items -> orders  ON order_items.order_id = orders.order_id  [many_to_one]
+  order_items -> products  ON order_items.product_key = products.product_key  [many_to_one]
+  orders -> customers  ON orders.customer_key = customers.customer_id  [many_to_one]
+  returns -> order_items  ON returns.order_id = order_items.order_id AND returns.line_number = order_items.line_number  [many_to_one]
+
+VOCABULARY (business term -> stored values):
+  channel: Marketing channel. Stored inconsistently across tables.
+    'Paid Search' == ['paid_search', 'Paid-Search', 'PPC']
+    'Organic' == ['organic', 'Organic']
+    'Referral' == ['referral', 'Referral']
+    'Social' == ['social', 'Social']
+    'Email' == ['email', 'Email']
+
+DIMENSIONS:
+  product_category (source products, string): sql = products.category
+     -- Product category.
+  product_name (source products, string): sql = products.product_name
+  ship_region (source orders, string): sql = orders.ship_region
+     -- Region the order shipped to.
+  order_status (source orders, string): sql = CASE orders.status WHEN 1 THEN 'pending' WHEN 2 THEN 'paid' WHEN 3 THEN 'shipped' WHEN 4 THEN 'delivered' WHEN 5 THEN 'cancelled' WHEN 6 THEN 'returned' END
+     -- Human-readable order status decoded from the raw integer code.
+  order_month (source orders, date): sql = date_trunc('month', orders.order_ts)
+  order_year (source orders, date): sql = date_trunc('year', orders.order_ts)
+  fiscal_year (source orders, date): sql = date_trunc('year', orders.order_ts + INTERVAL 11 MONTH)
+     -- Fiscal year (fiscal year starts Feb 1; shift +11 months).
+  order_channel (source orders, string): sql = orders.channel  [vocab=channel]
+     -- Marketing channel on the order (messy stored values).
+  customer_id (source orders, id): sql = orders.customer_key  [IDENTITY of customer]
+     -- Customer identity key. THE identifier for a customer.
+  customer_name (source customers, string): sql = customers.full_name  [LABEL for customer (not unique)]
+     -- Customer display name. A LABEL on the customer identity, not the identity. Names are not unique.
+
+MEASURES (certified; each additive at its base grain):
+  net_revenue (base grain: order_items):
+     agg    = SUM(order_items.quantity * order_items.unit_price * (1 - order_items.discount_rate))
+     filter = orders.status IN (3,4)
+     -- Certified net revenue: quantity x unit_price x (1 - discount), for shipped or delivered orders only. Already EXCLUDES pending, paid-not-shipped, cancelled, and returned orders. This is the right measure for 'what we actually earned after discounts, excluding cancelled and returned orders'. Certified by Finance.
+     synonyms: ['revenue', 'net sales', 'sales', 'what we actually earned', 'earnings after discounts']
+  gross_revenue (base grain: order_items):
+     agg    = SUM(order_items.quantity * order_items.unit_price)
+     filter = orders.status IN (3,4)
+     -- Revenue before line discounts, shipped/delivered only. Do NOT use the order_items.line_total column (it is pre-discount and unfiltered).
+  order_count (base grain: orders):
+     agg    = COUNT(DISTINCT orders.order_id)
+     filter = orders.status IN (3,4)
+     -- Count of distinct shipped/delivered orders.
+     synonyms: ['number of orders', 'orders']
+  line_count (base grain: order_items):
+     agg    = COUNT(*)
+     filter = orders.status IN (3,4)
+     -- Count of order lines (items), shipped/delivered only.
+  aov (RATIO): net_revenue / order_count
+     -- Average Order Value = net_revenue / order_count. A ratio of two certified measures at different grains — never AVG() over rows.
+     synonyms: ['average order value', 'avg order value']
+  gross_margin (base grain: order_items):
+     agg    = SUM(order_items.quantity * order_items.unit_price * (1 - order_items.discount_rate) - order_items.quantity * products.unit_cost)
+     filter = orders.status IN (3,4)
+     -- Net revenue minus product cost, at line grain, shipped/delivered only.
+     synonyms: ['margin', 'profit']
+  active_customers (base grain: orders):
+     agg    = COUNT(DISTINCT orders.customer_key)
+     filter = orders.status IN (3,4)
+     -- Distinct customers with at least one shipped/delivered order. Counts customer IDENTITY (customer_key), not name.
+     synonyms: ['active customers', 'number of customers', 'distinct customers']
+  shipping_fee_total (base grain: orders):
+     agg    = SUM(orders.shipping_fee)
+     filter = orders.status IN (3,4)
+     -- Total shipping fees. Lives at ORDER grain — summing it across order lines double-counts (fan-out). Breakable down only by order-level dimensions, never by product.
+     synonyms: ['shipping fees', 'freight', 'shipping revenue']
+  marketing_spend_total (base grain: marketing_spend):
+     agg    = SUM(marketing_spend.spend)
+     -- Total marketing spend by channel/month (separate fact; channel vocab is 'PPC' for paid search).
+  refund_total (base grain: returns):
+     agg    = SUM(returns.refund_amount)
+     -- Total refunds. Lives at order-LINE grain, keyed by (order_id, line_number). Joining to lines on order_id alone fans out each refund across the order's lines.
+     synonyms: ['refunds', 'total refunded', 'returns value']
+  refund_qty (base grain: returns):
+     agg    = SUM(returns.return_qty)
+     -- Total units returned, at (order_id, line_number) grain.
+     synonyms: ['units returned', 'returned quantity']
+  avg_shipping_fee (base grain: orders):
+     agg    = AVG(orders.shipping_fee)
+     filter = orders.status IN (3,4)
+     -- Average shipping fee per fulfilled (shipped/delivered) order. Order-grain average.
+     synonyms: ['average shipping fee', 'avg shipping per order', 'mean shipping fee per order']
+  shipping_pct_of_revenue (DERIVED): 100.0 * shipping_fee_total / NULLIF(net_revenue, 0)
+     components: shipping_fee_total, net_revenue
+     -- Total shipping fees as a PERCENTAGE of net revenue. A certified ratio of two measures at different grains (order-grain shipping over line-grain revenue), expressed as a percentage. Breakable down by order-level dimensions such as ship_region.
+     synonyms: ['shipping as a percentage of revenue', 'shipping percent of revenue', 'shipping cost ratio', 'shipping to revenue ratio']
+  net_revenue_after_refunds (DERIVED): net_revenue - refund_total
+     components: net_revenue, refund_total
+     -- Net revenue MINUS the dollar value of refunds issued. Use ONLY when the question explicitly asks to subtract refunds/returns dollar amounts. This is NOT the metric for 'excluding cancelled or returned orders' — that exclusion is already built into net_revenue via its status filter; for that phrasing use net_revenue.
+     synonyms: ['net revenue after subtracting refunds', 'revenue minus refund dollars']
+
+
+======================================================================
+Answer EACH of the following business questions INDEPENDENTLY (do not let one question influence another). For each question return a SINGLE DuckDB SQL query string that answers it directly.
+
+Return ONE JSON object mapping each question id to its answer, e.g. {"q1": "SELECT ...", "q2": "SELECT ..."}
+
+QUESTIONS:
+  [s1_netrev] What was our total net revenue?
+  [s1_netrev_p2] How much did we actually earn from sales, after discounts and excluding cancelled and returned orders?
+  [s1_netrev_p3] What is our certified revenue figure for the whole period?
+  [s1_aov] What is our average order value?
+  [s1_aov_p2] On average, how much revenue does a single order bring in?
+  [s1_aov_p3] What's the typical value of an order for us?
+  [s1_margin] What was our total gross margin?
+  [s1_active_cust] How many active customers do we have?
+  [s1_active_p2] How many distinct customers actually placed a fulfilled order?
+  [s1_active_p3] What's our count of customers who bought something that shipped?
+  [s1_gross_rev] What was our gross revenue, before any discounts were applied?
+  [s1_orders] How many orders did we ship or deliver?
+  [s1_top_customer] Who is our single highest-spending customer, and how much did they spend? (we want the actual top individual)
+  [s2_shipping_total] What did we collect in total shipping fees across all fulfilled orders?
+  [s2_shipping_region] What were total shipping fees by shipping region?
+  [s2_rev_and_ship] For each region, show net revenue and total shipping fees side by side.
+  [s2_lines] How many individual order lines (items) did we fulfil in total?
+  [s2_ship_pct] Across the business, what were total shipping fees as a percentage of net revenue?
+  [s2_avg_line_disc] What is the average shipping fee per fulfilled order?
+  [s3_refund_total] What is the total value of all refunds we issued?
+  [s3_refund_by_cat] What were total refunds broken down by product category?
+  [s3_refund_units] How many units were returned in total?
+  [s3_net_of_refunds] What is our net revenue after subtracting refunds?
+  [s3_refund_rev_by_cat] For each product category, show net revenue and total refunds side by side.
+  [s5_ship_pct_region] For each region, what were shipping fees as a percentage of net revenue?
+  [s7_vocab_paidsearch] How much net revenue came from orders acquired through paid search?
+  [s7_vocab_paidsearch_orders] How many fulfilled orders came through the paid search channel?
+  [s7_unans_age] What is our net revenue broken down by customer age group?
+  [s7_unans_supplier] Which supplier accounts for the most revenue?
+  [s7_unans_weather] How does rainy weather affect our daily sales?
+  [s7_ambiguous_sales] How many sales did we have?
+  [s7_ambiguous_best] What's our best product?
+  [s8_rev_2024] What was net revenue in calendar year 2024?
+  [s8_rev_fy2024] What was net revenue in fiscal year 2024? (our fiscal year starts February 1)
+  [s8_rev_by_month] Show net revenue by calendar month for 2024.
+  [s8_rev_2023] What was net revenue in calendar year 2023?

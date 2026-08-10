@@ -1,0 +1,15 @@
+{
+  "advneg_naive_gap": 0.1722,
+  "advneg_adjusted_effect": 0.129,
+  "distractor_gap": -0.002,
+  "attain_by_region": {
+    "APAC": 1.0645,
+    "Americas": 1.0738,
+    "EMEA": 1.0876
+  },
+  "emea_avg_assessment": 71.7534,
+  "emea_avg_attainment": 1.0876,
+  "advneg_completers": 318,
+  "advneg_attain_completed": 1.1564,
+  "advneg_attain_not": 0.9842
+}

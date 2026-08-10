@@ -1,0 +1,16 @@
+  gemini-2.5-flash-lit s4_attain_advneg     run0 q=8 error
+  gemini-2.5-flash-lit s4_attain_advneg     run1 q=8 error
+  gemini-2.5-flash-lit s4_attain_advneg     run2 q=8 error
+  gemini-2.5-flash-lit s4_attain_no_advneg  run0 q=7 ok
+  gemini-2.5-flash-lit s4_attain_no_advneg  run1 q=7 ok
+  gemini-2.5-flash-lit s4_attain_no_advneg  run2 q=7 ok
+  gemini-2.5-flash-lit s4_attain_by_region  run0 q=4 ok
+  gemini-2.5-flash-lit s4_attain_by_region  run1 q=4 ok
+  gemini-2.5-flash-lit s4_attain_by_region  run2 q=4 ok
+  gemini-2.5-flash-lit s4_assess_emea       run0 q=2 ok
+  gemini-2.5-flash-lit s4_assess_emea       run1 q=2 ok
+  gemini-2.5-flash-lit s4_assess_emea       run2 q=2 ok
+  gemini-2.5-flash-lit s5_advneg_lift       run0 q=8 error
+  gemini-2.5-flash-lit s5_advneg_lift       run1 q=8 error
+  gemini-2.5-flash-lit s5_advneg_lift       run2 q=8 error
+TOTAL agentic runs: 15 -> results/runs_agentic.jsonl

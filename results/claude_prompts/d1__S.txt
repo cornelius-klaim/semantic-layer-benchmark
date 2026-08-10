@@ -1,0 +1,73 @@
+You are querying a GOVERNED SEMANTIC LAYER. You may NOT write SQL. You select fields from the model; the layer generates correct SQL deterministically.
+
+AVAILABLE MEASURES (select by name):
+  - net_revenue: Certified net revenue: quantity x unit_price x (1 - discount), for shipped or delivered orders only. Already EXCLUDES pending, paid-not-shipped, cancelled, and returned orders. This is the right measure for 'what we actually earned after discounts, excluding cancelled and returned orders'. Certified by Finance. (also: revenue, net sales, sales, what we actually earned, earnings after discounts)
+  - gross_revenue: Revenue before line discounts, shipped/delivered only. Do NOT use the order_items.line_total column (it is pre-discount and unfiltered).
+  - order_count: Count of distinct shipped/delivered orders. (also: number of orders, orders)
+  - line_count: Count of order lines (items), shipped/delivered only.
+  - aov: Average Order Value = net_revenue / order_count. A ratio of two certified measures at different grains — never AVG() over rows. (also: average order value, avg order value)
+  - gross_margin: Net revenue minus product cost, at line grain, shipped/delivered only. (also: margin, profit)
+  - active_customers: Distinct customers with at least one shipped/delivered order. Counts customer IDENTITY (customer_key), not name. (also: active customers, number of customers, distinct customers)
+  - shipping_fee_total: Total shipping fees. Lives at ORDER grain — summing it across order lines double-counts (fan-out). Breakable down only by order-level dimensions, never by product. (also: shipping fees, freight, shipping revenue)
+  - marketing_spend_total: Total marketing spend by channel/month (separate fact; channel vocab is 'PPC' for paid search).
+  - refund_total: Total refunds. Lives at order-LINE grain, keyed by (order_id, line_number). Joining to lines on order_id alone fans out each refund across the order's lines. (also: refunds, total refunded, returns value)
+  - refund_qty: Total units returned, at (order_id, line_number) grain. (also: units returned, returned quantity)
+  - avg_shipping_fee: Average shipping fee per fulfilled (shipped/delivered) order. Order-grain average. (also: average shipping fee, avg shipping per order, mean shipping fee per order)
+  - shipping_pct_of_revenue: Total shipping fees as a PERCENTAGE of net revenue. A certified ratio of two measures at different grains (order-grain shipping over line-grain revenue), expressed as a percentage. Breakable down by order-level dimensions such as ship_region. (also: shipping as a percentage of revenue, shipping percent of revenue, shipping cost ratio, shipping to revenue ratio)
+  - net_revenue_after_refunds: Net revenue MINUS the dollar value of refunds issued. Use ONLY when the question explicitly asks to subtract refunds/returns dollar amounts. This is NOT the metric for 'excluding cancelled or returned orders' — that exclusion is already built into net_revenue via its status filter; for that phrasing use net_revenue. (also: net revenue after subtracting refunds, revenue minus refund dollars)
+AVAILABLE DIMENSIONS (for `dimensions` grouping and `filters`):
+  - product_category: Product category.
+  - product_name: 
+  - ship_region: Region the order shipped to.
+  - order_status: Human-readable order status decoded from the raw integer code.
+  - order_month: 
+  - order_year: 
+  - fiscal_year: Fiscal year (fiscal year starts Feb 1; shift +11 months).
+  - order_channel: Marketing channel on the order (messy stored values).
+  - customer_id: Customer identity key. THE identifier for a customer.
+  - customer_name: Customer display name. A LABEL on the customer identity, not the identity. Names are not unique.
+VOCABULARY — use these business terms as filter values:
+  - channel field values: 'Paid Search', 'Organic', 'Referral', 'Social', 'Email'
+
+======================================================================
+Answer EACH of the following business questions INDEPENDENTLY (do not let one question influence another). For each question return a query PLAN: a JSON object with keys "measures" (list of measure names), "dimensions" (list, optional), "filters" (list of {"field":..,"op":"=","value":..}, optional), "order_by" ({"field":..,"dir":"desc"}, optional), "limit" (int, optional). If a question CANNOT be answered from the listed fields, return {"refuse":"<reason>"} for it. If a question is AMBIGUOUS (e.g. "sales" could mean order count or revenue dollars), do NOT guess — return {"refuse":"clarify: ..."}. To identify a top entity, group by its IDENTITY dimension (the one described as THE identifier), never a display-name label.
+
+Return ONE JSON object mapping each question id to its answer, e.g. {"q1": {"measures":["net_revenue"]}, "q2": {"refuse":"no such field"}}
+
+QUESTIONS:
+  [s1_netrev] What was our total net revenue?
+  [s1_netrev_p2] How much did we actually earn from sales, after discounts and excluding cancelled and returned orders?
+  [s1_netrev_p3] What is our certified revenue figure for the whole period?
+  [s1_aov] What is our average order value?
+  [s1_aov_p2] On average, how much revenue does a single order bring in?
+  [s1_aov_p3] What's the typical value of an order for us?
+  [s1_margin] What was our total gross margin?
+  [s1_active_cust] How many active customers do we have?
+  [s1_active_p2] How many distinct customers actually placed a fulfilled order?
+  [s1_active_p3] What's our count of customers who bought something that shipped?
+  [s1_gross_rev] What was our gross revenue, before any discounts were applied?
+  [s1_orders] How many orders did we ship or deliver?
+  [s1_top_customer] Who is our single highest-spending customer, and how much did they spend? (we want the actual top individual)
+  [s2_shipping_total] What did we collect in total shipping fees across all fulfilled orders?
+  [s2_shipping_region] What were total shipping fees by shipping region?
+  [s2_rev_and_ship] For each region, show net revenue and total shipping fees side by side.
+  [s2_lines] How many individual order lines (items) did we fulfil in total?
+  [s2_ship_pct] Across the business, what were total shipping fees as a percentage of net revenue?
+  [s2_avg_line_disc] What is the average shipping fee per fulfilled order?
+  [s3_refund_total] What is the total value of all refunds we issued?
+  [s3_refund_by_cat] What were total refunds broken down by product category?
+  [s3_refund_units] How many units were returned in total?
+  [s3_net_of_refunds] What is our net revenue after subtracting refunds?
+  [s3_refund_rev_by_cat] For each product category, show net revenue and total refunds side by side.
+  [s5_ship_pct_region] For each region, what were shipping fees as a percentage of net revenue?
+  [s7_vocab_paidsearch] How much net revenue came from orders acquired through paid search?
+  [s7_vocab_paidsearch_orders] How many fulfilled orders came through the paid search channel?
+  [s7_unans_age] What is our net revenue broken down by customer age group?
+  [s7_unans_supplier] Which supplier accounts for the most revenue?
+  [s7_unans_weather] How does rainy weather affect our daily sales?
+  [s7_ambiguous_sales] How many sales did we have?
+  [s7_ambiguous_best] What's our best product?
+  [s8_rev_2024] What was net revenue in calendar year 2024?
+  [s8_rev_fy2024] What was net revenue in fiscal year 2024? (our fiscal year starts February 1)
+  [s8_rev_by_month] Show net revenue by calendar month for 2024.
+  [s8_rev_2023] What was net revenue in calendar year 2023?

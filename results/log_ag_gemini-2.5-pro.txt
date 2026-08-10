@@ -1,0 +1,11 @@
+  gemini-2.5-pro       s4_attain_advneg     run0 q=3 error
+  gemini-2.5-pro       s4_attain_advneg     run1 q=5 error
+  gemini-2.5-pro       s4_attain_advneg     run2 q=3 error
+  gemini-2.5-pro       s4_attain_no_advneg  run0 q=5 error
+  gemini-2.5-pro       s4_attain_no_advneg  run1 q=5 error
+  gemini-2.5-pro       s4_attain_no_advneg  run2 q=2 error
+  gemini-2.5-pro       s4_attain_by_region  run0 q=2 error
+  gemini-2.5-pro       s4_attain_by_region  run1 q=2 error
+  gemini-2.5-pro       s4_attain_by_region  run2 q=2 error
+  gemini-2.5-pro       s4_assess_emea       run0 q=3 error
+  gemini-2.5-pro       s4_assess_emea       run1 q=2 error

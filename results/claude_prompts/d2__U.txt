@@ -1,0 +1,63 @@
+You are a senior data analyst. You are given ONLY the physical database schema.
+
+DATABASE SCHEMA (DDL):
+CREATE TABLE hr_bridge (
+  employee_id BIGINT,
+  work_email VARCHAR,
+  region VARCHAR,
+  tenure_years BIGINT
+);
+
+CREATE TABLE sales_reps (
+  employee_id BIGINT,
+  rep_name VARCHAR,
+  sales_region VARCHAR
+);
+
+CREATE TABLE opportunities (
+  opp_id BIGINT,
+  employee_id BIGINT,
+  quarter VARCHAR,
+  closed_revenue DOUBLE,
+  quota_attainment DOUBLE
+);
+
+CREATE TABLE learners (
+  learner_id BIGINT,
+  email VARCHAR
+);
+
+CREATE TABLE courses (
+  course_id BIGINT,
+  course_name VARCHAR
+);
+
+CREATE TABLE course_completions (
+  learner_id BIGINT,
+  course_id BIGINT
+);
+
+CREATE TABLE assessment_scores (
+  learner_id BIGINT,
+  course_id BIGINT,
+  score DOUBLE
+);
+
+
+======================================================================
+Answer EACH of the following business questions INDEPENDENTLY (do not let one question influence another). For each question return a SINGLE DuckDB SQL query string that answers it directly.
+
+Return ONE JSON object mapping each question id to its answer, e.g. {"q1": "SELECT ...", "q2": "SELECT ..."}
+
+QUESTIONS:
+  [s4_attain_by_region] What is the average quota attainment by sales region?
+  [s4_revenue_by_region] What was total closed revenue by sales region?
+  [s4_attain_advneg] What is the average quota attainment among reps who have completed the Advanced Negotiation course?
+  [s4_attain_no_advneg] What is the average quota attainment among reps who have NOT completed the Advanced Negotiation course?
+  [s4_attain_by_advneg] Compare average quota attainment for reps who did versus did not complete Advanced Negotiation.
+  [s4_assess_emea] What is the average assessment score of reps in the EMEA region?
+  [s4_attain_emea] What is the average quota attainment of reps in EMEA?
+  [s4_attain_by_distract] Compare average quota attainment for reps who did versus did not complete Intro to Spreadsheets.
+  [s5_advneg_lift] How many points higher is average quota attainment for reps who completed Advanced Negotiation compared with those who did not?
+  [s4_unans_manager] What is the average quota attainment broken down by each rep's direct manager?
+  [s4_unans_age] What is the average assessment score by learner age band?

@@ -1,0 +1,85 @@
+# SEMANTIC MODEL (structured) — NorthStar Commerce
+# Line-item retail sales joined to orders, customers, and products. The certified revenue surface. Shipping fees live at ORDER grain; discounts at LINE grain.
+# GRAIN: order_items is one row per order LINE, keyed by (order_id, line_number). orders is one row per order. Summing an order-grain measure (shipping_fee) across joined lines fans out.
+
+JOINS (child -> parent, many-to-one):
+  order_items -> orders  ON order_items.order_id = orders.order_id  [many_to_one]
+  order_items -> products  ON order_items.product_key = products.product_key  [many_to_one]
+  orders -> customers  ON orders.customer_key = customers.customer_id  [many_to_one]
+  returns -> order_items  ON returns.order_id = order_items.order_id AND returns.line_number = order_items.line_number  [many_to_one]
+
+VOCABULARY (business term -> stored values):
+  channel: Marketing channel. Stored inconsistently across tables.
+    'Paid Search' == ['paid_search', 'Paid-Search', 'PPC']
+    'Organic' == ['organic', 'Organic']
+    'Referral' == ['referral', 'Referral']
+    'Social' == ['social', 'Social']
+    'Email' == ['email', 'Email']
+
+DIMENSIONS:
+  product_category (source products, string): sql = products.category
+     -- Product category.
+  product_name (source products, string): sql = products.product_name
+  ship_region (source orders, string): sql = orders.ship_region
+     -- Region the order shipped to.
+  order_status (source orders, string): sql = CASE orders.status WHEN 1 THEN 'pending' WHEN 2 THEN 'paid' WHEN 3 THEN 'shipped' WHEN 4 THEN 'delivered' WHEN 5 THEN 'cancelled' WHEN 6 THEN 'returned' END
+     -- Human-readable order status decoded from the raw integer code.
+  order_month (source orders, date): sql = date_trunc('month', orders.order_ts)
+  order_year (source orders, date): sql = date_trunc('year', orders.order_ts)
+  fiscal_year (source orders, date): sql = date_trunc('year', orders.order_ts + INTERVAL 11 MONTH)
+     -- Fiscal year (fiscal year starts Feb 1; shift +11 months).
+  order_channel (source orders, string): sql = orders.channel  [vocab=channel]
+     -- Marketing channel on the order (messy stored values).
+  customer_id (source orders, id): sql = orders.customer_key  [IDENTITY of customer]
+     -- Customer identity key. THE identifier for a customer.
+  customer_name (source customers, string): sql = customers.full_name  [LABEL for customer (not unique)]
+     -- Customer display name. A LABEL on the customer identity, not the identity. Names are not unique.
+
+MEASURES (certified; each additive at its base grain):
+  net_revenue (base grain: order_items):
+     agg    = SUM(order_items.quantity * order_items.unit_price * (1 - order_items.discount_rate))
+     filter = orders.status IN (3,4)
+     -- Certified net revenue: quantity x unit_price x (1 - discount), for shipped or delivered orders only. Excludes pending, paid-not-shipped, cancelled, and returned. Certified by Finance.
+     synonyms: ['revenue', 'net sales', 'sales']
+  gross_revenue (base grain: order_items):
+     agg    = SUM(order_items.quantity * order_items.unit_price)
+     filter = orders.status IN (3,4)
+     -- Revenue before line discounts, shipped/delivered only. Do NOT use the order_items.line_total column (it is pre-discount and unfiltered).
+  order_count (base grain: orders):
+     agg    = COUNT(DISTINCT orders.order_id)
+     filter = orders.status IN (3,4)
+     -- Count of distinct shipped/delivered orders.
+     synonyms: ['number of orders', 'orders']
+  line_count (base grain: order_items):
+     agg    = COUNT(*)
+     filter = orders.status IN (3,4)
+     -- Count of order lines (items), shipped/delivered only.
+  aov (RATIO): net_revenue / order_count
+     -- Average Order Value = net_revenue / order_count. A ratio of two certified measures at different grains — never AVG() over rows.
+     synonyms: ['average order value', 'avg order value']
+  gross_margin (base grain: order_items):
+     agg    = SUM(order_items.quantity * order_items.unit_price * (1 - order_items.discount_rate) - order_items.quantity * products.unit_cost)
+     filter = orders.status IN (3,4)
+     -- Net revenue minus product cost, at line grain, shipped/delivered only.
+     synonyms: ['margin', 'profit']
+  active_customers (base grain: orders):
+     agg    = COUNT(DISTINCT orders.customer_key)
+     filter = orders.status IN (3,4)
+     -- Distinct customers with at least one shipped/delivered order. Counts customer IDENTITY (customer_key), not name.
+     synonyms: ['active customers', 'number of customers', 'distinct customers']
+  shipping_fee_total (base grain: orders):
+     agg    = SUM(orders.shipping_fee)
+     filter = orders.status IN (3,4)
+     -- Total shipping fees. Lives at ORDER grain — summing it across order lines double-counts (fan-out). Breakable down only by order-level dimensions, never by product.
+     synonyms: ['shipping fees', 'freight', 'shipping revenue']
+  marketing_spend_total (base grain: marketing_spend):
+     agg    = SUM(marketing_spend.spend)
+     -- Total marketing spend by channel/month (separate fact; channel vocab is 'PPC' for paid search).
+  refund_total (base grain: returns):
+     agg    = SUM(returns.refund_amount)
+     -- Total refunds. Lives at order-LINE grain, keyed by (order_id, line_number). Joining to lines on order_id alone fans out each refund across the order's lines.
+     synonyms: ['refunds', 'total refunded', 'returns value']
+  refund_qty (base grain: returns):
+     agg    = SUM(returns.return_qty)
+     -- Total units returned, at (order_id, line_number) grain.
+     synonyms: ['units returned', 'returned quantity']

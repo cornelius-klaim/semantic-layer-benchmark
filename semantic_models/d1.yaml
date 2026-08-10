@@ -1,0 +1,136 @@
+dataset: d1
+title: NorthStar Commerce
+description: >
+  Line-item retail sales joined to orders, customers, and products. The certified
+  revenue surface. Shipping fees live at ORDER grain; discounts at LINE grain.
+grain_note: >
+  order_items is one row per order LINE, keyed by (order_id, line_number). orders is one
+  row per order. Summing an order-grain measure (shipping_fee) across joined lines fans out.
+
+# directed many-to-one edges (child -> parent). Used for fan-out-safe compilation.
+join_graph:
+  - {from: order_items, to: orders,    on_sql: "order_items.order_id = orders.order_id"}
+  - {from: order_items, to: products,  on_sql: "order_items.product_key = products.product_key"}
+  - {from: orders,      to: customers, on_sql: "orders.customer_key = customers.customer_id"}
+  # returns join on the FULL compound key (order_id AND line_number). Joining on order_id
+  # alone fans out each refund across every line in the order.
+  - {from: returns,     to: order_items, on_sql: "returns.order_id = order_items.order_id AND returns.line_number = order_items.line_number"}
+
+# canonical value maps (business term -> the messy stored values across tables)
+vocabulary:
+  channel:
+    description: Marketing channel. Stored inconsistently across tables.
+    map:
+      "Paid Search": ["paid_search", "Paid-Search", "PPC"]
+      "Organic":     ["organic", "Organic"]
+      "Referral":    ["referral", "Referral"]
+      "Social":      ["social", "Social"]
+      "Email":       ["email", "Email"]
+
+dimensions:
+  product_category: {source: products, sql: "products.category", type: string,
+                     description: "Product category."}
+  product_name:     {source: products, sql: "products.product_name", type: string}
+  ship_region:      {source: orders, sql: "orders.ship_region", type: string,
+                     description: "Region the order shipped to."}
+  order_status:     {source: orders, type: string,
+                     sql: "CASE orders.status WHEN 1 THEN 'pending' WHEN 2 THEN 'paid' WHEN 3 THEN 'shipped' WHEN 4 THEN 'delivered' WHEN 5 THEN 'cancelled' WHEN 6 THEN 'returned' END",
+                     description: "Human-readable order status decoded from the raw integer code."}
+  order_month:      {source: orders, sql: "date_trunc('month', orders.order_ts)", type: date}
+  order_year:       {source: orders, sql: "date_trunc('year', orders.order_ts)", type: date}
+  fiscal_year:      {source: orders, type: date,
+                     sql: "date_trunc('year', orders.order_ts + INTERVAL 11 MONTH)",
+                     description: "Fiscal year (fiscal year starts Feb 1; shift +11 months)."}
+  order_channel:    {source: orders, sql: "orders.channel", type: string, vocabulary: channel,
+                     description: "Marketing channel on the order (messy stored values)."}
+  customer_id:      {source: orders, sql: "orders.customer_key", type: id, identity: customer,
+                     description: "Customer identity key. THE identifier for a customer."}
+  customer_name:    {source: customers, sql: "customers.full_name", type: string, label_for: customer,
+                     description: "Customer display name. A LABEL on the customer identity, not the identity. Names are not unique."}
+
+measures:
+  net_revenue:
+    base: order_items
+    requires: [orders]
+    agg_sql: "SUM(order_items.quantity * order_items.unit_price * (1 - order_items.discount_rate))"
+    filter_sql: "orders.status IN (3,4)"
+    description: "Certified net revenue: quantity x unit_price x (1 - discount), for shipped or delivered orders only. Already EXCLUDES pending, paid-not-shipped, cancelled, and returned orders. This is the right measure for 'what we actually earned after discounts, excluding cancelled and returned orders'. Certified by Finance."
+    synonyms: ["revenue", "net sales", "sales", "what we actually earned", "earnings after discounts"]
+  gross_revenue:
+    base: order_items
+    requires: [orders]
+    agg_sql: "SUM(order_items.quantity * order_items.unit_price)"
+    filter_sql: "orders.status IN (3,4)"
+    description: "Revenue before line discounts, shipped/delivered only. Do NOT use the order_items.line_total column (it is pre-discount and unfiltered)."
+  order_count:
+    base: orders
+    agg_sql: "COUNT(DISTINCT orders.order_id)"
+    filter_sql: "orders.status IN (3,4)"
+    description: "Count of distinct shipped/delivered orders."
+    synonyms: ["number of orders", "orders"]
+  line_count:
+    base: order_items
+    requires: [orders]
+    agg_sql: "COUNT(*)"
+    filter_sql: "orders.status IN (3,4)"
+    description: "Count of order lines (items), shipped/delivered only."
+  aov:
+    base: order_items
+    ratio: {numerator: net_revenue, denominator: order_count}
+    description: "Average Order Value = net_revenue / order_count. A ratio of two certified measures at different grains — never AVG() over rows."
+    synonyms: ["average order value", "avg order value"]
+  gross_margin:
+    base: order_items
+    requires: [products, orders]
+    agg_sql: "SUM(order_items.quantity * order_items.unit_price * (1 - order_items.discount_rate) - order_items.quantity * products.unit_cost)"
+    filter_sql: "orders.status IN (3,4)"
+    join_required: [products]
+    description: "Net revenue minus product cost, at line grain, shipped/delivered only."
+    synonyms: ["margin", "profit"]
+  active_customers:
+    base: orders
+    agg_sql: "COUNT(DISTINCT orders.customer_key)"
+    filter_sql: "orders.status IN (3,4)"
+    description: "Distinct customers with at least one shipped/delivered order. Counts customer IDENTITY (customer_key), not name."
+    synonyms: ["active customers", "number of customers", "distinct customers"]
+  shipping_fee_total:
+    base: orders
+    agg_sql: "SUM(orders.shipping_fee)"
+    filter_sql: "orders.status IN (3,4)"
+    description: "Total shipping fees. Lives at ORDER grain — summing it across order lines double-counts (fan-out). Breakable down only by order-level dimensions, never by product."
+    synonyms: ["shipping fees", "freight", "shipping revenue"]
+  marketing_spend_total:
+    base: marketing_spend
+    agg_sql: "SUM(marketing_spend.spend)"
+    description: "Total marketing spend by channel/month (separate fact; channel vocab is 'PPC' for paid search)."
+  refund_total:
+    base: returns
+    agg_sql: "SUM(returns.refund_amount)"
+    description: "Total refunds. Lives at order-LINE grain, keyed by (order_id, line_number). Joining to lines on order_id alone fans out each refund across the order's lines."
+    synonyms: ["refunds", "total refunded", "returns value"]
+  refund_qty:
+    base: returns
+    agg_sql: "SUM(returns.return_qty)"
+    description: "Total units returned, at (order_id, line_number) grain."
+    synonyms: ["units returned", "returned quantity"]
+  # --- Certified metrics promoted by the semantic architect (v2) ---
+  # Each was previously an ad-hoc question the layer could not answer; defined once, tested against
+  # ground truth, and promoted so it is deterministically correct for every future query.
+  avg_shipping_fee:
+    base: orders
+    agg_sql: "AVG(orders.shipping_fee)"
+    filter_sql: "orders.status IN (3,4)"
+    description: "Average shipping fee per fulfilled (shipped/delivered) order. Order-grain average."
+    synonyms: ["average shipping fee", "avg shipping per order", "mean shipping fee per order"]
+  shipping_pct_of_revenue:
+    base: orders
+    expr: "100.0 * shipping_fee_total / NULLIF(net_revenue, 0)"
+    components: [shipping_fee_total, net_revenue]
+    description: "Total shipping fees as a PERCENTAGE of net revenue. A certified ratio of two measures at different grains (order-grain shipping over line-grain revenue), expressed as a percentage. Breakable down by order-level dimensions such as ship_region."
+    synonyms: ["shipping as a percentage of revenue", "shipping percent of revenue", "shipping cost ratio", "shipping to revenue ratio"]
+  net_revenue_after_refunds:
+    base: order_items
+    expr: "net_revenue - refund_total"
+    components: [net_revenue, refund_total]
+    description: "Net revenue MINUS the dollar value of refunds issued. Use ONLY when the question explicitly asks to subtract refunds/returns dollar amounts. This is NOT the metric for 'excluding cancelled or returned orders' — that exclusion is already built into net_revenue via its status filter; for that phrasing use net_revenue."
+    synonyms: ["net revenue after subtracting refunds", "revenue minus refund dollars"]

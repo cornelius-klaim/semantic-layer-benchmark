@@ -1,0 +1,4 @@
+  s1_netrev_p2     done (3 runs so far)
+  s7_ambiguous_sales done (6 runs so far)
+  s5_advneg_lift   done (9 runs so far)
+TOTAL runs logged: 9 -> results/runs_fix_gemini-2.5-pro.jsonl
