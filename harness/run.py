@@ -117,7 +117,10 @@ def exec_sql(con, sql):
 def run_condition(cond, q, ds, model_key, temperature=0.0):
     model, ddl, g, d, con = ctx(ds)
     pr = prompt(cond, q, ds)
-    resp = call(MODELS[model_key], pr, temperature=temperature)
+    # Reasoning-tier models (e.g. gemini-3.x-pro) spend part of the output budget on hidden
+    # "thinking" tokens; 2048 truncates the visible SQL mid-statement (finish=MAX_TOKENS) and
+    # produces a spurious parse error rather than a genuine model failure. Give an ample budget.
+    resp = call(MODELS[model_key], pr, temperature=temperature, max_tokens=8192)
     out = {"prompt_tokens": resp["in_tokens"], "out_tokens": resp["out_tokens"],
            "latency": resp["latency"], "llm_error": resp["error"], "completion": resp["text"][:4000]}
     if resp["error"] or not resp["text"].strip():

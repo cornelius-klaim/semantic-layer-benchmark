@@ -66,8 +66,9 @@ token table cannot price at all.
 
 ## Headline result
 
-Across **2 vendors (Gemini + Claude), 7 models, and ~3,000 scored trials**, accuracy climbs the
-ladder **U 16% → D 76% → G 80% → S 86%**, with the identical ordering for both vendors. Certified
+Across **2 vendors (Gemini + Claude), 9 models — including the current-generation `gemini-3.7-flash`
+and `gemini-3.1-pro-preview` — and ~4,500 scored trials**, accuracy climbs the
+ladder **U 18% → D 82% → G 84% → S 90%**, with the identical ordering for both vendors. Certified
 *content* (U→G) delivers most of the gain (+63 pts) and can be done in-prompt; deterministic
 *enforcement* (G→S) adds a further significant increment (+6.5 pts, McNemar p≈1e-4) concentrated in
 the highest-stakes failures — silent fan-out, confident answers to unanswerable questions (S refuses:

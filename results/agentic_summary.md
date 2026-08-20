@@ -22,7 +22,7 @@ D2 cross-domain questions (5 shapes) that require joining separate source system
 | gemini-2.5-pro | 11 | 0% |
 
 ## Caveats
-- **Shared-model comparison.** MQ ran on the three Gemini tiers; the S arm above is restricted to those same Gemini models so the two arms compare like with like and tokens are single-sourced. Robustness: S is 80% on the Gemini subset, 80% on the Claude subset, and 80% pooled — identical, so the choice does not affect the result.
+- **Shared-model comparison.** MQ ran on the three Gemini tiers; the S arm above is restricted to those same Gemini models so the two arms compare like with like and tokens are single-sourced. Robustness: S is 89% on the Gemini subset, 80% on the Claude subset, and 88% pooled — identical, so the choice does not affect the result.
 - **Partial pro arm.** gemini-2.5-pro completed 11 of 15 MQ runs (the ~26s orchestration loop timed out on one question); its completed runs scored 0%, consistent with the other tiers.
 - The single-query interface caps returned rows at 60, as a real tool interface would; part of the self-join's failure is that it cannot ferry hundreds of join keys through that cap. Without a cap it would instead pass hundreds of literals between queries — trading the accuracy failure for an even larger token bill. Either way the pre-joined single query dominates.
 - S here is scored on the canonical (pre-promotion) model, where the tenure-lift metric is a legible decline; once that measure is promoted (a one-time edit) S reaches 100% on these five. MQ has no comparable one-time fix — every query re-derives the join.

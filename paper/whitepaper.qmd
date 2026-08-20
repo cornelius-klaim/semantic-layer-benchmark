@@ -22,21 +22,21 @@ abstract: |
   **U** (ungrounded; physical schema only), **D** (the same facts as grounded documents), **G**
   (the same facts as a structured semantic model in the prompt), and **S** (a governed semantic
   layer that compiles a validated query plan to SQL deterministically and refuses out-of-model
-  questions). Holding questions, data, and ground truth fixed, we run **2981** scored trials
+  questions). Holding questions, data, and ground truth fixed, we run **4485** scored trials
   across **52** business-language questions, **two model vendors** (Google Gemini and
-  Anthropic Claude; 7 models, of which 5 have complete coverage and
+  Anthropic Claude; 9 models, of which 7 have complete coverage and
   anchor every headline number — two partial single-run tiers are reported separately, never pooled),
   and two purpose-built warehouses whose answers are known *by construction* — with planted traps for
   grain/fan-out, compound keys, identity collisions, messy vocabularies, time intelligence, and a
-  cross-domain causal effect with a confounder. Accuracy climbs the ladder from **16.5%**
-  (U) to **72.7%** (D) to **77.2%** (G) to **85.2%** (S), and the ordering
+  cross-domain causal effect with a confounder. Accuracy climbs the ladder from **17.9%**
+  (U) to **81.7%** (D) to **84.5%** (G) to **90.2%** (S), and the ordering
   is identical for both vendors. Decomposing the climb, certified *content* (U→G) accounts for
-  **+60.7** points and can be delivered in-prompt, while deterministic *enforcement* at
-  identical content (G→S) adds a further **+8** points (McNemar *p* ≈ 6e-5).
+  **+66.6** points and can be delivered in-prompt, while deterministic *enforcement* at
+  identical content (G→S) adds a further **+5.7** points (McNemar *p* ≈ 1e-5).
   Enforcement’s value is concentrated where it matters most and is *not* uniform: the semantic layer
   is near-perfect on certified metrics, cross-domain joins, and time intelligence, and it *refuses*
   the unanswerable questions the free-form conditions confidently fabricate answers to
-  (**84.6%** vs ≤18.8% correct on the refusal suite); it also *compresses the
+  (**90.5%** vs ≤49.7% correct on the refusal suite); it also *compresses the
   capability gap*, lifting the weakest model most. The layer’s apparent cost — it can only answer what
   is modeled — turns out to be a *workflow*, not a wall: in a controlled iteration we played the
   semantic architect and drove condition **S to 100%** on every question, for every model with complete
@@ -88,9 +88,17 @@ the step that produces and governs that artifact **Model** — **M** — and the
 is not an existing industry term; we are coining it here, and we define it precisely so it can be
 argued with and measured.
 
-We also name the M's output, and the distinction is the crux. Borrowing the medallion vocabulary of
-bronze/silver/gold tables — where "gold" denotes the curated, business-ready top — the conventional
-gold layer is a set of curated *tables*. A single wide, denormalized gold table is genuinely flexible
+We also name the M's output, and the distinction is the crux. We borrow the medallion vocabulary of
+bronze/silver/gold deliberately, and it is worth being precise about where we keep it and where we
+break from it: the raw (bronze) and refined (silver) layers carry over essentially unchanged — the
+divergence is entirely at **gold**.^[This architectural reframing — bronze → a lossless landing zone,
+silver → a refined zone held at the lowest grain, and the replacement of a *physical* gold layer with
+a *virtual, semantic* one — is developed at length in C. van Heerden, "Beyond the Medallion:
+Architecting the Post-Dashboard Data Era for AI," Google Cloud Community (2026),
+<https://medium.com/google-cloud/beyond-the-medallion-architecting-the-post-dashboard-data-era-for-ai-0253c483512e>.
+The mapping is therefore *not* one-to-one with traditional ETL: bronze and silver map cleanly, but the
+Semantic Gold Layer supersedes the physical gold layer rather than renaming it.] Where "gold" denotes
+the curated, business-ready top, the conventional gold layer is a set of curated *tables*. A single wide, denormalized gold table is genuinely flexible
 *within its grain*: revenue by region, by category, by month are all one table and a `GROUP BY`, no new
 pipeline. The trap is at the **boundaries** it cannot cross. A table is aggregated to one grain, so you
 cannot drill *below* it (a daily-revenue-by-region rollup cannot answer a per-order question — the
@@ -112,6 +120,17 @@ accompanies, *The Semantic Gold Layer* — is that in the LLM era the M is no lo
 the load-bearing step: it is what stands between a fluent model and a wrong number. Everything that
 follows is an attempt to *measure* that claim rather than assert it.
 
+Concretely, the mapping to the medallion architecture is layer-by-layer, and it is only at the top that
+we depart:
+
+| Medallion layer | What it holds (traditional BI) | ELTM stage | What changes for the AI era |
+|---|---|---|---|
+| **Bronze** | Raw data landed from sources, append-only | **Landing Zone** | Unchanged — lossless, replayable capture |
+| **Silver** | Cleaned, typed, deduplicated, conformed | **Refined Zone** | Unchanged in spirit, with one rule made explicit: kept at the *lowest grain*, never pre-aggregated |
+| **Gold** | Curated *physical* marts, pre-aggregated for dashboards | **Semantic Gold Layer** (the **M**) | Replaced *in kind*: physical tables become a *virtual, governed* model of measures, grains, and joins — compiled on demand, and able to refuse |
+
+: Bronze and Silver carry over almost unchanged; the divergence — physical gold tables giving way to a virtual, enforced semantic layer — is entirely at gold. {#tbl-medallion}
+
 This paper isolates one causal question and answers it under controlled conditions:
 
 > **Does the *form* in which business semantics are supplied to an LLM change the correctness of the
@@ -122,17 +141,17 @@ To answer it we hold everything else fixed — the same business-language questi
 same ground truth — and vary only the grounding along a four-rung ladder (§[-@sec-ladder]). We build
 two synthetic-but-realistic warehouses (§[-@sec-data]) whose correct answers are known *by
 construction*, seeded with the specific traps that separate syntax from meaning. We evaluate
-**7 models across two vendors** (Gemini and Claude), score **2981** trials
+**9 models across two vendors** (Gemini and Claude), score **4485** trials
 (§[-@sec-method]), and report where each rung of grounding helps, where it does not, and — crucially
 — *what kind* of failure each rung leaves behind (§[-@sec-results]).
 
 Our findings are threefold. First, grounding helps enormously and monotonically: accuracy rises from
-**16.5%** ungrounded to **85.2%** under the semantic layer, with the identical
+**17.9%** ungrounded to **90.2%** under the semantic layer, with the identical
 ordering U < D ≲ G < S for **both** vendors. Second, the climb *decomposes*: certified **content**
 (U→G) buys most of the gain and is deliverable in a prompt, while deterministic **enforcement** (G→S)
 buys a further, statistically significant increment concentrated in the highest-stakes failure modes
 — silent fan-out, confident answers to unanswerable questions, and definition drift across a
-conversation. Third, and most honestly, enforcement is a **trade**, not a free lunch: because the
+conversation. Third, and most importantly, enforcement is a **trade**, not a free lunch: because the
 layer can only answer what is modeled, it is near-perfect on governed questions and *refuses* the
 rest, underperforming the free-form conditions on ad-hoc metrics it was never given. For any setting
 where a wrong number is worse than no number — most of enterprise finance and operations — that trade
@@ -154,11 +173,18 @@ descriptions of tables and metrics pasted into the prompt. Our conditions **D** 
 representations of exactly this idea (documents vs. a structured model), and let us measure whether
 *representation* matters when *content* is held identical.
 
-**Semantic layers.** The semantic layer — from the metrics/modeling tradition through LookML and the
-recent metrics-layer efforts — externalizes business definitions into a governed, versioned artifact
-that compiles to SQL. Its promise is *consistency*: one definition of revenue, enforced everywhere.
-Our condition **S** operationalizes this as a deterministic compiler over a validated query plan, and
-asks what enforcement adds *beyond* putting the same definitions in the prompt.
+**Semantic layers.** The semantic layer externalizes business definitions into a governed, versioned
+artifact that compiles to SQL. Its promise is *consistency*: one definition of revenue, enforced
+everywhere. The idea has several concrete instantiations that differ mainly in how the model is
+authored and where it is enforced: **LookML** (Looker), which expresses measures, dimensions, joins,
+and grain as declarative code that Looker compiles to dialect-specific SQL at query time; **dbt's
+Semantic Layer / MetricFlow**, which defines metrics alongside transformation models; and headless
+layers such as **Cube** and **AtScale**. LookML is notable for handling grain and fan-out safety
+(symmetric aggregates) and access control as first-class, enforced properties rather than conventions;
+we treat it as one realization of the pattern, not as the object of study. Deliberately, then, our
+condition **S** is *vendor-neutral*: a generic deterministic compiler over a validated query plan, so
+the result is a property of enforcement itself rather than of any product. The question S isolates is
+what that enforcement adds *beyond* putting the same definitions in the prompt.
 
 **This work** contributes: (i) a four-rung grounding ladder that cleanly separates content from
 enforcement; (ii) two open, seeded benchmark datasets with *ground truth by construction* and planted
@@ -242,15 +268,32 @@ names leak into the prompt.
 # Methodology {#sec-method}
 
 **Models and vendors.** We evaluate two vendors. From **Google Gemini** (called via the Generative
-Language API): `gemini-2.5-flash-lite`, `gemini-2.5-flash`, `gemini-2.5-pro`, and `gemini-3.5-flash`.
-From **Anthropic Claude**: `claude-haiku`, `claude-sonnet`, and `claude-opus`. The tiers span a wide
-capability range within each vendor, testing whether raw capability substitutes for grounding. Note
-that condition **S** never asks a model to author SQL — its correctness is a property of the compiler,
-largely invariant to model choice.
+Language API): `gemini-2.5-flash-lite`, `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-3.5-flash`,
+`gemini-3.7-flash` (the current-generation flash tier), and `gemini-3.1-pro-preview` (the
+current-generation Pro tier). From **Anthropic Claude**: `claude-haiku`,
+`claude-sonnet`, and `claude-opus`. The tiers span a wide capability range within each vendor, testing
+whether raw capability substitutes for grounding. Note that condition **S** never asks a model to
+author SQL — its correctness is a property of the compiler, largely invariant to model choice.
+
+*A note on version pinning, for transparency.* The identifiers above are the exact model strings we
+called, and we report them precisely because the effect we measure could otherwise be confused with a
+model-selection artifact. Two honest caveats follow from this. First, the Gemini strings without a
+date suffix are **rolling aliases**, not immutable snapshots — the provider may update the weights they
+point to over time — so an exact re-run reproduces our *harness and data* deterministically but not
+necessarily the provider's model of a given day; `gemini-3.1-pro-preview` is additionally a preview
+build. Second, the Claude tiers name the vendor's Haiku/Sonnet/Opus classes as served during the run;
+combined with the batched subagent protocol for that arm (below), the Claude results are best read as
+*corroborating* the ladder rather than as a snapshot-pinned replication. The load-bearing result —
+condition **S** — is the most robust to all of this, since S's correctness comes from the compiler, not
+the model.
 
 **Protocol.** For U/D/G we build the condition's prompt, extract the SQL, execute it on DuckDB, and
 compare to ground truth; for S we compile the returned plan and execute, or record its refusal. A
 refusal to an *answerable* question scores wrong; a refusal to an *unanswerable* one scores correct.
+The output-token budget is 2048 for all tiers except the reasoning-tier `gemini-3.1-pro-preview`,
+which uses 8192: at 2048 that model spends the budget on hidden "thinking" tokens and truncates the
+visible SQL mid-statement (a harness limitation that produces a spurious parse error, not a genuine
+model failure), so we give it headroom to emit a complete query.
 The two smaller Gemini tiers are run five times per cell and the others one to three times; we report
 95% cluster-bootstrap confidence intervals that resample **questions** (the unit of generalization),
 so the intervals reflect question-to-question variation, not just run noise. The Claude arm is
@@ -258,7 +301,7 @@ administered through a batched protocol (grounding shown once per condition, eve
 independently, one run) — a documented variant of the Gemini per-call protocol (§[-@sec-threats]).
 
 **Coverage.** We report the number of runs per (model × condition) and flag every tier as complete or
-partial; the 5 complete tiers reached ~all questions and anchor all pooled numbers,
+partial; the 7 complete tiers reached ~all questions and anchor all pooled numbers,
 while two partial single-run tiers (which ended after the first suites) are reported separately and
 never averaged into a headline. Perfect-looking scores from a tier that never reached the hard suites
 are thus impossible to mistake for the real thing.
@@ -277,11 +320,11 @@ between adjacent rungs, pairing on (question, model, run).
 
 ## The ladder
 
-Pooled across the 5 complete-coverage models and both datasets, accuracy rises
-monotonically along the grounding ladder (@fig-ladder): **U 16.5%** (95% CI [6.9,
-27.1]) → **D 72.7%** ([62.5, 82]) → **G 77.2%** ([66.7,
-86.6]) → **S 85.2%** ([75.6, 93.8]). Every adjacent step is significant by
-McNemar’s exact test (U→D *p*≈4e-105; D→G *p*≈2e-5; G→S *p*≈6e-5).
+Pooled across the 7 complete-coverage models and both datasets, accuracy rises
+monotonically along the grounding ladder (@fig-ladder): **U 17.9%** (95% CI [7.7,
+28.9]) → **D 81.7%** ([75.4, 88]) → **G 84.5%** ([77.9,
+90.5]) → **S 90.2%** ([83.9, 95.6]). Every adjacent step is significant by
+McNemar’s exact test (U→D *p*≈1e-191; D→G *p*≈9e-5; G→S *p*≈1e-5).
 The ungrounded baseline is not merely worse — it is close to unusable on business-language questions,
 because the physical schema does not encode what the questions mean. (Two partial single-run tiers,
 `gemini-2.5-pro` and `gemini-3.5-flash`, reached only the first one-to-two suites before their run
@@ -289,26 +332,26 @@ ended; their high scores reflect easy questions only and are excluded from every
 their partial coverage is disclosed with per-cell counts, not silently averaged in.)
 
 A note on what S’s sub-100 means before the iteration of §[-@sec-promotion]. Decomposing condition S’s
-outcomes among the 5 complete-coverage models (n=641 S runs), only
-**0.9%** of its answers are *genuinely wrong* — a confidently returned incorrect number.
-A further **11.1%** are **legible declines**: questions asking for an
+outcomes among the 7 complete-coverage models (n=1017 S runs), only
+**1.1%** of its answers are *genuinely wrong* — a confidently returned incorrect number.
+A further **7%** are **legible declines**: questions asking for an
 ad-hoc metric not yet in the model, where S returns the modeled components or refuses rather than
 inventing a value. We score these as a distinct `declined_unmodeled` class, never as `correct` but
 also never conflated with hallucination — because the two failure modes could not be more different for
 a user who must trust the number. S essentially does not hand back a wrong number; it hands back a
 smaller, honest one, or nothing.
 
-![The grounding ladder. Accuracy pooled across the five complete-coverage models and two datasets,
+![The grounding ladder. Accuracy pooled across the 7 complete-coverage models and two datasets,
 with 95% cluster-bootstrap confidence intervals (partial single-run tiers excluded). Representation
 (U→G) delivers the bulk of the gain; enforcement (G→S) secures it.](../paper_assets/figures/fig_ladder.png){#fig-ladder width=80%}
 
 ## Representation versus enforcement
 
 @fig-decomp decomposes the climb. Moving from an ungrounded prompt to the certified structured model
-(U→G) adds **+60.7** points — the value of *content*, deliverable in-prompt. Moving from that
-same content in the prompt to deterministic enforcement (G→S) adds a further **+8**
-points. In paired terms, S *corrects* 104 cases that G got wrong while *regressing*
-on 53 (McNemar *p*≈6e-5); the regressions are almost entirely ad-hoc
+(U→G) adds **+66.6** points — the value of *content*, deliverable in-prompt. Moving from that
+same content in the prompt to deterministic enforcement (G→S) adds a further **+5.7**
+points. In paired terms, S *corrects* 116 cases that G got wrong while *regressing*
+on 58 (McNemar *p*≈1e-5); the regressions are almost entirely ad-hoc
 metrics the layer was never given (§[-@sec-tradeoff]), while the corrections are silent, high-stakes
 errors — fan-out, un-refused impossibilities, drift.
 
@@ -316,19 +359,27 @@ errors — fan-out, un-refused impossibilities, drift.
 *enforcement* buys (G→S).](../paper_assets/figures/fig_decomp.png){#fig-decomp width=80%}
 
 Comparing the two *representations* of identical content, document-grounding (D) and structured-model
-grounding (G) reach **72.7%** and **77.2%** (D→G *p*≈2e-5) — structure
+grounding (G) reach **81.7%** and **84.5%** (D→G *p*≈9e-5) — structure
 helps modestly beyond prose, and both vastly outperform no grounding.
 
 ## The ladder holds across vendors
 
-The effect is not a quirk of one model family. Both vendors trace the same ladder (@fig-vendor):
-Gemini U 16% → S 84.6%, Claude U 18.4% → S
-87.2%. Across the 5 complete-coverage models, the ordering
+The effect is not a quirk of one model family. The same ladder appears across both vendors and across
+model generations — from the 2.5-era Gemini tiers through the current-generation `gemini-3.7-flash`
+and `gemini-3.1-pro-preview`, and across the Claude Haiku/Sonnet/Opus tiers (@fig-vendor): Gemini
+U 17.8% → S 90.6%, Claude U 18.4% → S
+87.2%. Across the 7 complete-coverage models, the ordering
 **U < D ≤ G < S** holds for every model, and condition **S** is strikingly *consistent* — each lands
-between 84.4% and 89.4% under the layer — whereas U/D/G swing widely with capability (see
+between 84.4% and 100% under the layer — whereas U/D/G swing widely with capability (see
 §[-@sec-capability]). (The two partial tiers show D/G *inversions* on their easy-suite-only coverage —
 `gemini-2.5-pro` scores D above G, `claude-opus` ties them — which is a coverage artifact, not a
 counterexample; we use ≤ rather than < between D and G for exactly this reason.)
+
+This vendor split is a **robustness check that the ladder replicates, not a vendor benchmark**, and
+should not be read as a ranking. The two vendors' pooled sets are not matched capability-for-capability
+— the Gemini pool deliberately includes a weak floor tier (`gemini-2.5-flash-lite`) with no equivalent
+in the Claude pool, which if anything drags the Gemini average down — so the takeaway is that *both
+vendors climb the same rungs in the same order*, at every tier we tested.
 
 ![The grounding ladder reproduced independently for each vendor.](../paper_assets/figures/fig_vendor.png){#fig-vendor width=85%}
 
@@ -426,8 +477,8 @@ we compare it to **S**, one deterministic pre-joined query. On the five D2 cross
   (26.5s vs. 1s).
 
 For a like-with-like comparison the S arm is restricted to the same Gemini tiers MQ ran on; S is
-80% on the Gemini subset, 80% on the Claude subset, and
-80% pooled — identical, so the restriction does not affect the result. (The pro
+89% on the Gemini subset, 80% on the Claude subset, and
+88% pooled — identical, so the restriction does not affect the result. (The pro
 MQ arm is partial — 11 of 15 runs completed before the ~26.5s orchestration
 loop timed out on one question; its completed runs scored 0%, in line with the others.)
 
@@ -448,14 +499,14 @@ cost per question.](../paper_assets/figures/fig_agentic.png){#fig-agentic width=
 @fig-suite breaks accuracy down by suite, and this is where the honest, nuanced picture emerges.
 Condition **S** is at or near the top exactly where governance decides the answer:
 
-- **Certified metrics** (suite 1): S 99.4% — the certified definition of revenue, applied
+- **Certified metrics** (suite 1): S 99.6% — the certified definition of revenue, applied
   identically every time.
-- **Cross-domain join** (suite 4): S 100% — the identity bridge and email normalization
+- **Cross-domain join** (suite 4): S 97% — the identity bridge and email normalization
   are modeled once; U/D/G must reconstruct them and often cannot.
 - **Time intelligence** (suite 8): S 100% — the fiscal calendar and calendar-year filters
   compile correctly by construction.
-- **Ambiguity & refusal** (suite 7): S 84.6% versus D 17.9% and G
-  18.8%. This is the signature result: asked questions with *no answer in the data* (revenue
+- **Ambiguity & refusal** (suite 7): S 90.5% versus D 49.2% and G
+  49.7%. This is the signature result: asked questions with *no answer in the data* (revenue
   by customer age, top supplier), the free-form conditions fabricate a query against an unrelated column
   and return a confident number; **S refuses**. That is the difference between fail-loud and fail-silent,
   and it is an architectural property, not something a bigger model fixes.
@@ -576,12 +627,12 @@ error is **45.1%** (@fig-error-mag): errors are not
 near-misses but large, confident, well-formed mistakes — the characteristic and dangerous failure of
 ungrounded analytics, because a 45%-wrong number returned with valid SQL looks exactly like a right
 one. The SQL audits localize the cause: ungrounded queries use the known-bad `line_total` column
-**283** times and omit the certified status filter
-**141** times across the run set; on D2 they join identities without
-normalizing the email **29** times.
+**452** times and omit the certified status filter
+**272** times across the run set; on D2 they join identities without
+normalizing the email **69** times.
 
-![Relative error on *wrong* numeric answers, by condition, over the 5
-complete-coverage models (n per box annotated; 326 wrong-with-error
+![Relative error on *wrong* numeric answers, by condition, over the 7
+complete-coverage models (n per box annotated; 488 wrong-with-error
 across conditions — a full-CSV recount including the two partial tiers gives 338 for U, same story).
 The ungrounded condition is wrong far more often and its
 errors cluster in the **20–60% "plausible on a dashboard" zone** — off enough to mislead, close enough
@@ -609,8 +660,8 @@ work.](../paper_assets/figures/fig_drift.png){#fig-drift width=82%}
 
 Grounding is not free in tokens, but the premium is modest and front-loaded into the prompt
 (@fig-cost). Condition **S** is in fact the *cheapest* grounded layer to run and the fastest: it sends
-a compact field catalog and emits a compact plan (mean 42 output tokens vs
-89 for D) rather than a full SQL statement, where D and G resend the entire
+a compact field catalog and emits a compact plan (mean 39 output tokens vs
+87 for D) rather than a full SQL statement, where D and G resend the entire
 knowledge base on every call. Per query this is roughly **4× cheaper than D and 2.5× cheaper than G**,
 and across the whole benchmark D and G together consumed about **6.6× the tokens** S did.
 
@@ -619,15 +670,15 @@ The cost asymmetry is starkest in the *reaching-100* experiment (§[-@sec-reachi
 already-logged plans — whereas the D/G guardrail attempt spent ~4× as many tokens and still did not
 converge. Enforcement is cheaper to run *and* cheaper to make correct.
 
-![Cost by condition (Gemini arm). The asymmetry is **input-side**: D resends a ~2989-token
-knowledge base on every call and G a ~1740-token model, while S sends a compact
-~704-token field catalog; S also emits the fewest output tokens and has the lowest
+![Cost by condition (Gemini arm). The asymmetry is **input-side**: D resends a ~3327-token
+knowledge base on every call and G a ~1942-token model, while S sends a compact
+~829-token field catalog; S also emits the fewest output tokens and has the lowest
 latency.](../paper_assets/figures/fig_cost.png){#fig-cost width=98%}
 
 # Threats to validity {#sec-threats}
 
 We summarize; the full treatment is in `LIMITATIONS.md`. **Vendor coverage:** we test two vendors
-(Gemini, Claude) and seven models, and the ladder replicates across both; we do not claim coverage of
+(Gemini, Claude) and 9 models, and the ladder replicates across both; we do not claim coverage of
 all model families. **Claude-arm protocol:** the Claude arm is administered in a batched form (grounding
 once per condition, questions answered independently, single run) rather than the Gemini per-call form;
 the within-Claude ladder is therefore internally valid, and the cross-vendor agreement is corroborating
@@ -692,10 +743,10 @@ exposed. But that cost is centralized, linear-ish, and — critically — *testa
 # Conclusion
 
 Holding questions, data, and ground truth fixed, the representation and enforcement of business semantics
-supplied to an LLM change the correctness of its analytics from **16.5%** to **85.2%**
-(pooled over the 5 complete-coverage models), with the same U < D ≤ G < S ordering in
-both vendors. The gain decomposes into *content* (**+60.7**
-points, recoverable in-prompt) and *enforcement* (**+8** points, recoverable only by
+supplied to an LLM change the correctness of its analytics from **17.9%** to **90.2%**
+(pooled over the 7 complete-coverage models), with the same U < D ≤ G < S ordering in
+both vendors. The gain decomposes into *content* (**+66.6**
+points, recoverable in-prompt) and *enforcement* (**+5.7** points, recoverable only by
 compiling and refusing).
 
 The decisive property is not S’s peak accuracy but its *trajectory*. When we iterated to close the

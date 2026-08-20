@@ -11,6 +11,8 @@ MODELS = {
     "gemini-2.5-flash":      "gemini-2.5-flash",
     "gemini-2.5-pro":        "gemini-2.5-pro",
     "gemini-3.5-flash":      "gemini-3.5-flash",
+    "gemini-3.1-pro":        "gemini-3.1-pro-preview",
+    "gemini-3.7-flash":      "gemini-3.7-flash",
 }
 
 def call(model_id, prompt, temperature=0.0, max_tokens=2048, retries=4):

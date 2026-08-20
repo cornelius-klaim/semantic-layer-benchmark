@@ -88,9 +88,17 @@ the step that produces and governs that artifact **Model** — **M** — and the
 is not an existing industry term; we are coining it here, and we define it precisely so it can be
 argued with and measured.
 
-We also name the M's output, and the distinction is the crux. Borrowing the medallion vocabulary of
-bronze/silver/gold tables — where "gold" denotes the curated, business-ready top — the conventional
-gold layer is a set of curated *tables*. A single wide, denormalized gold table is genuinely flexible
+We also name the M's output, and the distinction is the crux. We borrow the medallion vocabulary of
+bronze/silver/gold deliberately, and it is worth being precise about where we keep it and where we
+break from it: the raw (bronze) and refined (silver) layers carry over essentially unchanged — the
+divergence is entirely at **gold**.^[This architectural reframing — bronze → a lossless landing zone,
+silver → a refined zone held at the lowest grain, and the replacement of a *physical* gold layer with
+a *virtual, semantic* one — is developed at length in C. van Heerden, "Beyond the Medallion:
+Architecting the Post-Dashboard Data Era for AI," Google Cloud Community (2026),
+<https://medium.com/google-cloud/beyond-the-medallion-architecting-the-post-dashboard-data-era-for-ai-0253c483512e>.
+The mapping is therefore *not* one-to-one with traditional ETL: bronze and silver map cleanly, but the
+Semantic Gold Layer supersedes the physical gold layer rather than renaming it.] Where "gold" denotes
+the curated, business-ready top, the conventional gold layer is a set of curated *tables*. A single wide, denormalized gold table is genuinely flexible
 *within its grain*: revenue by region, by category, by month are all one table and a `GROUP BY`, no new
 pipeline. The trap is at the **boundaries** it cannot cross. A table is aggregated to one grain, so you
 cannot drill *below* it (a daily-revenue-by-region rollup cannot answer a per-order question — the
@@ -112,6 +120,17 @@ accompanies, *The Semantic Gold Layer* — is that in the LLM era the M is no lo
 the load-bearing step: it is what stands between a fluent model and a wrong number. Everything that
 follows is an attempt to *measure* that claim rather than assert it.
 
+Concretely, the mapping to the medallion architecture is layer-by-layer, and it is only at the top that
+we depart:
+
+| Medallion layer | What it holds (traditional BI) | ELTM stage | What changes for the AI era |
+|---|---|---|---|
+| **Bronze** | Raw data landed from sources, append-only | **Landing Zone** | Unchanged — lossless, replayable capture |
+| **Silver** | Cleaned, typed, deduplicated, conformed | **Refined Zone** | Unchanged in spirit, with one rule made explicit: kept at the *lowest grain*, never pre-aggregated |
+| **Gold** | Curated *physical* marts, pre-aggregated for dashboards | **Semantic Gold Layer** (the **M**) | Replaced *in kind*: physical tables become a *virtual, governed* model of measures, grains, and joins — compiled on demand, and able to refuse |
+
+: Bronze and Silver carry over almost unchanged; the divergence — physical gold tables giving way to a virtual, enforced semantic layer — is entirely at gold. {#tbl-medallion}
+
 This paper isolates one causal question and answers it under controlled conditions:
 
 > **Does the *form* in which business semantics are supplied to an LLM change the correctness of the
@@ -132,7 +151,7 @@ ordering U < D ≲ G < S for **both** vendors. Second, the climb *decomposes*: c
 (U→G) buys most of the gain and is deliverable in a prompt, while deterministic **enforcement** (G→S)
 buys a further, statistically significant increment concentrated in the highest-stakes failure modes
 — silent fan-out, confident answers to unanswerable questions, and definition drift across a
-conversation. Third, and most honestly, enforcement is a **trade**, not a free lunch: because the
+conversation. Third, and most importantly, enforcement is a **trade**, not a free lunch: because the
 layer can only answer what is modeled, it is near-perfect on governed questions and *refuses* the
 rest, underperforming the free-form conditions on ad-hoc metrics it was never given. For any setting
 where a wrong number is worse than no number — most of enterprise finance and operations — that trade
@@ -154,11 +173,18 @@ descriptions of tables and metrics pasted into the prompt. Our conditions **D** 
 representations of exactly this idea (documents vs. a structured model), and let us measure whether
 *representation* matters when *content* is held identical.
 
-**Semantic layers.** The semantic layer — from the metrics/modeling tradition through LookML and the
-recent metrics-layer efforts — externalizes business definitions into a governed, versioned artifact
-that compiles to SQL. Its promise is *consistency*: one definition of revenue, enforced everywhere.
-Our condition **S** operationalizes this as a deterministic compiler over a validated query plan, and
-asks what enforcement adds *beyond* putting the same definitions in the prompt.
+**Semantic layers.** The semantic layer externalizes business definitions into a governed, versioned
+artifact that compiles to SQL. Its promise is *consistency*: one definition of revenue, enforced
+everywhere. The idea has several concrete instantiations that differ mainly in how the model is
+authored and where it is enforced: **LookML** (Looker), which expresses measures, dimensions, joins,
+and grain as declarative code that Looker compiles to dialect-specific SQL at query time; **dbt's
+Semantic Layer / MetricFlow**, which defines metrics alongside transformation models; and headless
+layers such as **Cube** and **AtScale**. LookML is notable for handling grain and fan-out safety
+(symmetric aggregates) and access control as first-class, enforced properties rather than conventions;
+we treat it as one realization of the pattern, not as the object of study. Deliberately, then, our
+condition **S** is *vendor-neutral*: a generic deterministic compiler over a validated query plan, so
+the result is a property of enforcement itself rather than of any product. The question S isolates is
+what that enforcement adds *beyond* putting the same definitions in the prompt.
 
 **This work** contributes: (i) a four-rung grounding ladder that cleanly separates content from
 enforcement; (ii) two open, seeded benchmark datasets with *ground truth by construction* and planted
@@ -242,15 +268,32 @@ names leak into the prompt.
 # Methodology {#sec-method}
 
 **Models and vendors.** We evaluate two vendors. From **Google Gemini** (called via the Generative
-Language API): `gemini-2.5-flash-lite`, `gemini-2.5-flash`, `gemini-2.5-pro`, and `gemini-3.5-flash`.
-From **Anthropic Claude**: `claude-haiku`, `claude-sonnet`, and `claude-opus`. The tiers span a wide
-capability range within each vendor, testing whether raw capability substitutes for grounding. Note
-that condition **S** never asks a model to author SQL — its correctness is a property of the compiler,
-largely invariant to model choice.
+Language API): `gemini-2.5-flash-lite`, `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-3.5-flash`,
+`gemini-3.7-flash` (the current-generation flash tier), and `gemini-3.1-pro-preview` (the
+current-generation Pro tier). From **Anthropic Claude**: `claude-haiku`,
+`claude-sonnet`, and `claude-opus`. The tiers span a wide capability range within each vendor, testing
+whether raw capability substitutes for grounding. Note that condition **S** never asks a model to
+author SQL — its correctness is a property of the compiler, largely invariant to model choice.
+
+*A note on version pinning, for transparency.* The identifiers above are the exact model strings we
+called, and we report them precisely because the effect we measure could otherwise be confused with a
+model-selection artifact. Two honest caveats follow from this. First, the Gemini strings without a
+date suffix are **rolling aliases**, not immutable snapshots — the provider may update the weights they
+point to over time — so an exact re-run reproduces our *harness and data* deterministically but not
+necessarily the provider's model of a given day; `gemini-3.1-pro-preview` is additionally a preview
+build. Second, the Claude tiers name the vendor's Haiku/Sonnet/Opus classes as served during the run;
+combined with the batched subagent protocol for that arm (below), the Claude results are best read as
+*corroborating* the ladder rather than as a snapshot-pinned replication. The load-bearing result —
+condition **S** — is the most robust to all of this, since S's correctness comes from the compiler, not
+the model.
 
 **Protocol.** For U/D/G we build the condition's prompt, extract the SQL, execute it on DuckDB, and
 compare to ground truth; for S we compile the returned plan and execute, or record its refusal. A
 refusal to an *answerable* question scores wrong; a refusal to an *unanswerable* one scores correct.
+The output-token budget is 2048 for all tiers except the reasoning-tier `gemini-3.1-pro-preview`,
+which uses 8192: at 2048 that model spends the budget on hidden "thinking" tokens and truncates the
+visible SQL mid-statement (a harness limitation that produces a spurious parse error, not a genuine
+model failure), so we give it headroom to emit a complete query.
 The two smaller Gemini tiers are run five times per cell and the others one to three times; we report
 95% cluster-bootstrap confidence intervals that resample **questions** (the unit of generalization),
 so the intervals reflect question-to-question variation, not just run noise. The Claude arm is
@@ -298,7 +341,7 @@ also never conflated with hallucination — because the two failure modes could 
 a user who must trust the number. S essentially does not hand back a wrong number; it hands back a
 smaller, honest one, or nothing.
 
-![The grounding ladder. Accuracy pooled across the five complete-coverage models and two datasets,
+![The grounding ladder. Accuracy pooled across the {{complete_count}} complete-coverage models and two datasets,
 with 95% cluster-bootstrap confidence intervals (partial single-run tiers excluded). Representation
 (U→G) delivers the bulk of the gain; enforcement (G→S) secures it.](../paper_assets/figures/fig_ladder.png){#fig-ladder width=80%}
 
@@ -321,14 +364,22 @@ helps modestly beyond prose, and both vastly outperform no grounding.
 
 ## The ladder holds across vendors
 
-The effect is not a quirk of one model family. Both vendors trace the same ladder (@fig-vendor):
-Gemini U {{by_vendor.gemini.U}}% → S {{by_vendor.gemini.S}}%, Claude U {{by_vendor.claude.U}}% → S
+The effect is not a quirk of one model family. The same ladder appears across both vendors and across
+model generations — from the 2.5-era Gemini tiers through the current-generation `gemini-3.7-flash`
+and `gemini-3.1-pro-preview`, and across the Claude Haiku/Sonnet/Opus tiers (@fig-vendor): Gemini
+U {{by_vendor.gemini.U}}% → S {{by_vendor.gemini.S}}%, Claude U {{by_vendor.claude.U}}% → S
 {{by_vendor.claude.S}}%. Across the {{complete_count}} complete-coverage models, the ordering
 **U < D ≤ G < S** holds for every model, and condition **S** is strikingly *consistent* — each lands
 between {{s_min}}% and {{s_max}}% under the layer — whereas U/D/G swing widely with capability (see
 §[-@sec-capability]). (The two partial tiers show D/G *inversions* on their easy-suite-only coverage —
 `gemini-2.5-pro` scores D above G, `claude-opus` ties them — which is a coverage artifact, not a
 counterexample; we use ≤ rather than < between D and G for exactly this reason.)
+
+This vendor split is a **robustness check that the ladder replicates, not a vendor benchmark**, and
+should not be read as a ranking. The two vendors' pooled sets are not matched capability-for-capability
+— the Gemini pool deliberately includes a weak floor tier (`gemini-2.5-flash-lite`) with no equivalent
+in the Claude pool, which if anything drags the Gemini average down — so the takeaway is that *both
+vendors climb the same rungs in the same order*, at every tier we tested.
 
 ![The grounding ladder reproduced independently for each vendor.](../paper_assets/figures/fig_vendor.png){#fig-vendor width=85%}
 
@@ -627,7 +678,7 @@ latency.](../paper_assets/figures/fig_cost.png){#fig-cost width=98%}
 # Threats to validity {#sec-threats}
 
 We summarize; the full treatment is in `LIMITATIONS.md`. **Vendor coverage:** we test two vendors
-(Gemini, Claude) and seven models, and the ladder replicates across both; we do not claim coverage of
+(Gemini, Claude) and {{models_count}} models, and the ladder replicates across both; we do not claim coverage of
 all model families. **Claude-arm protocol:** the Claude arm is administered in a batched form (grounding
 once per condition, questions answered independently, single run) rather than the Gemini per-call form;
 the within-Claude ladder is therefore internally valid, and the cross-vendor agreement is corroborating

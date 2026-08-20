@@ -199,7 +199,7 @@ def fig_drilldown(N):
     ax.bar(x, hall, 0.6, bottom=[c+r for c,r in zip(cor,ref)], label="hallucinated (confident-wrong)", color="#C5221F")
     ax.set_xticks(x); ax.set_xticklabels([labels[c] for c in conds])
     ax.set_ylabel("runs (drill-down questions)")
-    ax.legend(frameon=False, fontsize=8.5, loc="upper center", ncol=1)
+    ax.legend(frameon=False, fontsize=8.5, loc="center left", bbox_to_anchor=(1.01, 0.5))
     ax.set_title("The drill-down trap: boxed into a gold aggregate with no refuse option (P0),\n"
                  "the model hallucinates and never declines; an escape hatch (P) converts that to\n"
                  "refusal; the semantic layer (S) drills to base grain and answers",

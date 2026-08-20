@@ -4,22 +4,22 @@
 
 | condition | accuracy | 95% CI |
 |---|---|---|
-| U ungrounded | 16.5% | [6.9, 27.1] |
-| D doc-grounded (OKF) | 72.7% | [62.5, 82.0] |
-| G prompt-grounded model | 77.2% | [66.7, 86.6] |
-| S semantic layer | 85.2% | [75.6, 93.8] |
+| U ungrounded | 17.9% | [7.7, 28.9] |
+| D doc-grounded (OKF) | 81.7% | [75.4, 88.0] |
+| G prompt-grounded model | 84.5% | [77.9, 90.5] |
+| S semantic layer | 90.2% | [83.9, 95.6] |
 
 ## McNemar exact paired tests (adjacent rungs)
 
 | comparison | discordant (lo→hi wins) | discordant (hi→lo wins) | n pairs | p-value |
 |---|---|---|---|---|
-| U → D | 362 | 2 | 641 | 3.54e-105 |
-| D → G | 37 | 8 | 641 | 1.54e-05 |
-| G → S | 104 | 53 | 641 | 5.74e-05 |
-| U → S | 453 | 13 | 641 | 7.16e-116 |
+| U → D | 651 | 2 | 1017 | 1.14e-191 |
+| D → G | 39 | 11 | 1017 | 9.02e-05 |
+| G → S | 116 | 58 | 1017 | 1.31e-05 |
+| U → S | 748 | 13 | 1017 | 6.98e-202 |
 
 ## Representation vs enforcement decomposition
 
-- Adding grounding **content** (U→G, representation axis): **+60.7 pts** (U=16.5% → G=77.2%).
-- Adding deterministic **enforcement** at equal content (G→S): **+8.0 pts** (G=77.2% → S=85.2%).
-- Document vs structured representation of the SAME facts (D→G): **+4.5 pts**.
+- Adding grounding **content** (U→G, representation axis): **+66.6 pts** (U=17.9% → G=84.5%).
+- Adding deterministic **enforcement** at equal content (G→S): **+5.7 pts** (G=84.5% → S=90.2%).
+- Document vs structured representation of the SAME facts (D→G): **+2.8 pts**.
