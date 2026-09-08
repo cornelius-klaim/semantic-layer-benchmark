@@ -64,6 +64,9 @@ def main():
     # per-run scored CSV: MQ rows + the SHARED-MODEL S counterparts (single token column, reconciles)
     mq_rows = [{"qid": r["qid"], "condition": "MQ", "model": r["model"], "run": r["run"],
                 "outcome": r["outcome"], "correct": r["correct"], "queries": r.get("queries"),
+                # `r` is a json.loads dict (missing -> None), so `or 0` is safe here; the pandas
+                # side of this same file must use .fillna(0) instead — a missing cell is NaN,
+                # which is truthy and would slip through an `or` guard.
                 "tokens": (r.get("in_tokens") or 0)+(r.get("out_tokens") or 0),
                 "latency": r.get("latency")} for r in mq]
     s_rows = sG[["qid","condition","model","run","outcome","correct","prompt_tokens","out_tokens","latency"]].copy()
