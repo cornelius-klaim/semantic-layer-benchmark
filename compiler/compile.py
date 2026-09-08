@@ -11,9 +11,22 @@ Guarantees (the paper's "fail-safe by construction"):
     from its base) is REFUSED, not silently inflated.
   - Unknown fields are refused. Vocabulary filters resolve business terms to stored values.
   - Certified filters (e.g. status IN shipped/delivered) are applied automatically, always.
+
+SQL emission goes through a pluggable DIALECT (see compiler/dialects.py). The compiler
+decides WHAT to emit; the dialect decides how it is spelled for a warehouse. The default
+dialect is DuckDB and is the identity transform, so the DuckDB arm is byte-for-byte what
+it was before the seam existed.
 """
+import os
 import re
+import sys
 import yaml
+
+try:
+    from dialects import DUCKDB, DialectError, dim_ref, get_dialect
+except ImportError:  # imported without compiler/ on sys.path
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from dialects import DUCKDB, DialectError, dim_ref, get_dialect
 
 def load_model(path):
     return yaml.safe_load(open(path))
@@ -55,14 +68,14 @@ def _edges_to(model, base, target):
         return None
     return dfs(base, []) or []
 
-def _joins_for(model, base, needed_tables):
+def _joins_for(model, base, needed_tables, D=DUCKDB):
     """Assemble LEFT JOIN clauses covering all needed tables reachable from base."""
     clauses, joined = [], {base}
     for t in needed_tables:
         if t == base: continue
         for to, on in _edges_to(model, base, t):
             if to not in joined:
-                clauses.append(f"LEFT JOIN {to} ON {on}"); joined.add(to)
+                clauses.append(f"LEFT JOIN {D.table_ref(to)} ON {D.expr(on)}"); joined.add(to)
     return clauses
 
 def resolve_value(model, field, value):
@@ -101,7 +114,7 @@ def _measure(model, name):
         raise Refusal(f"unknown measure '{name}'")
     return model["measures"][name]
 
-def _measure_subquery(model, mname, dims, filters):
+def _measure_subquery(model, mname, dims, filters, D=DUCKDB):
     """Aggregate one measure at its base grain, grouped by dims, with certified + plan filters."""
     m = _measure(model, mname)
     if "ratio" in m or "expr" in m:  # composite measures are assembled by the caller
@@ -117,7 +130,7 @@ def _measure_subquery(model, mname, dims, filters):
     needed = ({base} | {_dim_source(model, d) for d in dims}
               | set(m.get("join_required", [])) | set(m.get("requires", [])))
     where = []
-    if m.get("filter_sql"): where.append(m["filter_sql"])
+    if m.get("filter_sql"): where.append(D.expr(m["filter_sql"]))
     for f in filters:
         field = _filter_field(f)
         if not field or "value" not in f:
@@ -126,15 +139,17 @@ def _measure_subquery(model, mname, dims, filters):
         needed.add(src)
         dim = model["dimensions"][field]
         vals = resolve_value(model, field, f["value"])
-        col = dim["sql"]
+        col = D.expr(dim["sql"])
         op = _filter_op(f)
         # date dimensions (year/month/day truncations) accept a bare calendar value:
         # 2024 or "2024" -> DATE '2024-01-01'; "2024-05" -> DATE '2024-05-01'. A governed
         # layer must handle "filter year = 2024" without the caller knowing the storage format.
+        # The literal's TYPE is dialect business: DuckDB coerces TIMESTAMP<->DATE, BigQuery
+        # does not, so the dialect gets the raw model expression and types the literal to match.
         if dim.get("type") == "date":
             cv = _coerce_date(vals[0])
             dop = "=" if op == "in" else op   # a single calendar value is an equality, not IN
-            where.append(f"{col} {dop} DATE '{cv}'")
+            where.append(D.date_predicate(dim["sql"], dop, cv))
             continue
         if op in ("=", "in") and len(vals) > 1:
             inlist = ", ".join("'" + str(v).replace("'", "''") + "'" for v in vals)
@@ -143,16 +158,23 @@ def _measure_subquery(model, mname, dims, filters):
             v = vals[0]
             vlit = v if isinstance(v, (int, float)) else "'" + str(v).replace("'", "''") + "'"
             where.append(f"{col} {op} {vlit}")
-    joins = _joins_for(model, base, needed)
-    dim_sel = [f'{model["dimensions"][d]["sql"]} AS {d}' for d in dims]
-    sel = dim_sel + [f'{m["agg_sql"]} AS {mname}']
-    sql = f"SELECT {', '.join(sel)}\nFROM {base}\n" + "\n".join(joins)
+    joins = _joins_for(model, base, needed, D)
+    dim_sel = [f'{D.expr(model["dimensions"][d]["sql"])} AS {d}' for d in dims]
+    sel = dim_sel + [f'{D.expr(m["agg_sql"])} AS {mname}']
+    sql = f"SELECT {', '.join(sel)}\nFROM {D.table_ref(base)}\n" + "\n".join(joins)
     if where: sql += "\nWHERE " + " AND ".join(where)
     if dims:  sql += "\nGROUP BY " + ", ".join(str(i+1) for i in range(len(dims)))
     return sql
 
-def compile_plan(model, plan):
-    """Compile a query plan to SQL, or return a structured refusal."""
+def compile_plan(model, plan, dialect=None):
+    """Compile a query plan to SQL, or return a structured refusal.
+
+    `dialect` defaults to DuckDB (the identity dialect); pass a Dialect from
+    compiler/dialects.py — or a spec string like 'bigquery:my-project.my_dataset' — to
+    target another warehouse. A DialectError propagates: an unsupported warehouse
+    construct is a compiler gap, not a governed refusal, and must not be scored as one.
+    """
+    D = dialect if hasattr(dialect, "table_ref") else get_dialect(dialect)
     try:
         if plan.get("refuse"):
             return {"refuse": plan["refuse"]}
@@ -182,16 +204,25 @@ def compile_plan(model, plan):
         needed_measures = list(dict.fromkeys(needed_measures))  # dedupe, keep order
         # one subquery per base measure
         for mn in needed_measures:
-            comp_sqls[mn] = _measure_subquery(model, mn, dims, filters)
-        # combine subqueries via FULL OUTER JOIN on dims
+            comp_sqls[mn] = _measure_subquery(model, mn, dims, filters, D)
+        # combine subqueries via FULL OUTER JOIN on dims (the cartesian no-dimension case
+        # is spelled differently per dialect — see Dialect.combine_measures)
         aliases = {mn: f"m{i}" for i, mn in enumerate(needed_measures)}
         first = needed_measures[0]
         frm = f"({comp_sqls[first]}) {aliases[first]}"
+        # Each subquery is joined against EVERY subquery already in the FROM clause, on a
+        # key COALESCE'd across them; the dimension is then read back through the same
+        # COALESCE. Measure subqueries have different domains (different base grains,
+        # different certified filters), so a group present in m1 but not in m0 must still
+        # find its partners in m2, m3, ... and must still carry its label. Joining
+        # everything to m0 alone loses that label with two measures and splits the group
+        # into one row per measure with three or more.
+        joined = [aliases[first]]
         for mn in needed_measures[1:]:
-            on = " AND ".join(f"{aliases[first]}.{d} = {aliases[mn]}.{d}" for d in dims) or "TRUE"
-            frm += f"\nFULL OUTER JOIN ({comp_sqls[mn]}) {aliases[mn]} ON {on}"
+            frm += D.combine_measures(joined, dims, comp_sqls[mn], aliases[mn])
+            joined.append(aliases[mn])
         # SELECT list: dims + requested measures (ratios computed here)
-        sel = [f"{aliases[first]}.{d} AS {d}" for d in dims]
+        sel = [f"{dim_ref(joined, d)} AS {d}" for d in dims]
         for mn in measures:
             if mn in ratio_defs:
                 num, den = ratio_defs[mn]["numerator"], ratio_defs[mn]["denominator"]
@@ -199,7 +230,7 @@ def compile_plan(model, plan):
             elif mn in expr_defs:
                 # substitute each component measure name with its qualified subquery column,
                 # longest names first so a name that is a prefix of another isn't half-replaced
-                e = expr_defs[mn]["expr"]
+                e = D.expr(expr_defs[mn]["expr"])
                 for comp in sorted(expr_defs[mn]["components"], key=len, reverse=True):
                     e = re.sub(rf"\b{re.escape(comp)}\b", f"{aliases[comp]}.{comp}", e)
                 sel.append(f"({e}) AS {mn}")
@@ -217,18 +248,29 @@ def compile_plan(model, plan):
                    or ob.get("dimension") or ob.get("column"))
             d = str(ob.get("dir") or ob.get("order") or ob.get("direction") or "desc")
             if fld in set(measures) | set(dims):
-                sql += f"\nORDER BY {fld} {'ASC' if d.lower().startswith('asc') else 'DESC'}"
+                # NULLS LAST is explicit, not decorative. The combine step MANUFACTURES NULLs
+                # (a group present in one measure's subquery but not another's), and engines
+                # disagree on where they sort: DuckDB puts NULLs last in both directions,
+                # BigQuery puts them FIRST for ASC. Without this, the same plan returns a
+                # different row per warehouse under ORDER BY ... ASC + LIMIT. Emitting
+                # NULLS LAST matches DuckDB's existing behaviour exactly (so published
+                # DuckDB results are unchanged) and makes BigQuery agree.
+                _dir = 'ASC' if d.lower().startswith('asc') else 'DESC'
+                sql += f"\nORDER BY {fld} {_dir} NULLS LAST"
         if plan.get("limit"):
             try: sql += f"\nLIMIT {int(plan['limit'])}"
             except (TypeError, ValueError): pass
         return {"sql": sql}
     except Refusal as r:
         return {"refuse": str(r)}
+    except DialectError:
+        # a warehouse-coverage gap, NOT a governance decision — never disguise it as one
+        raise
     except Exception as e:
         return {"refuse": f"invalid plan ({type(e).__name__}: {str(e)[:120]})"}
 
-def run_plan(model, plan, con):
-    c = compile_plan(model, plan)
+def run_plan(model, plan, con, dialect=None):
+    c = compile_plan(model, plan, dialect)
     if "refuse" in c:
         return {"refuse": c["refuse"]}
     rows = con.execute(c["sql"]).fetchall()
@@ -236,7 +278,7 @@ def run_plan(model, plan, con):
     return {"sql": c["sql"], "rows": rows, "columns": cols}
 
 if __name__ == "__main__":
-    import duckdb, os, json
+    import duckdb, json
     HERE = os.path.dirname(__file__)
     model = load_model(os.path.join(HERE, "..", "semantic_models", "d1.yaml"))
     con = duckdb.connect(os.path.join(HERE, "..", "warehouse", "d1.duckdb"), read_only=True)
@@ -254,3 +296,13 @@ if __name__ == "__main__":
             print("REFUSE:", r["refuse"])
         else:
             print("OK:", p.get("measures"), p.get("dimensions", ""), "->", r["rows"][:3])
+    # `python compiler/compile.py bigquery:<project>.<dataset>` prints the same plans as
+    # BigQuery SQL without executing anything (no credentials, no API calls).
+    if len(sys.argv) > 1:
+        D = get_dialect(sys.argv[1])
+        print(f"\n--- {D.name} ---")
+        for p in tests + [{"measures": ["net_revenue"], "dimensions": ["order_month"]},
+                          {"measures": ["net_revenue"],
+                           "filters": [{"field": "fiscal_year", "op": "=", "value": 2024}]}]:
+            c = compile_plan(model, p, D)
+            print("\n" + (c.get("sql") or "REFUSE: " + c["refuse"]))
