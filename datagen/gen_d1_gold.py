@@ -5,10 +5,14 @@ given ONLY these tables. Questions that need sub-grain detail (a specific custom
 region×category cross) cannot be answered from them — so we can measure whether the model *declines*
 or *confidently hallucinates* a number from the aggregate it does have.
 
-These tables are added to the existing d1.duckdb and their DDL written to schemas/d1_gold_ddl.sql.
+These tables are added to the existing d1.duckdb, exported to warehouse/d1/*.parquet (the portable
+copy every other table in this repo also gets, and the form the BigQuery port loads from), and
+their DDL written to schemas/d1_gold_ddl.sql.
 """
 import os, duckdb
 HERE = os.path.dirname(__file__)
+OUT = os.path.join(HERE, "..", "warehouse", "d1")
+os.makedirs(OUT, exist_ok=True)
 dbp = os.path.join(HERE, "..", "warehouse", "d1.duckdb")
 con = duckdb.connect(dbp)
 
@@ -39,6 +43,25 @@ WHERE o.status IN (3,4) GROUP BY 1
 
 rows_rm = con.execute("SELECT COUNT(*) FROM gold_revenue_by_region_month").fetchone()[0]
 rows_cat = con.execute("SELECT COUNT(*) FROM gold_sales_by_category").fetchone()[0]
+
+# Parquet export — same convention as gen_d1.py / gen_d2.py (one <table>.parquet per table under
+# warehouse/d1/). Without this the two gold tables lived only inside d1.duckdb and would be the
+# only tables in the repo missing from a parquet-driven load (e.g. the BigQuery port).
+# ORDER BY ALL is not cosmetic: these tables come from a parallel hash aggregate, so their row
+# order differs on every rebuild. Sorting here makes the exported file byte-identical run to run,
+# which keeps a git-tracked artifact from churning on every `python datagen/gen_d1_gold.py`.
+# (The DuckDB tables themselves still permute on rebuild — pre-existing, see the CREATE statements.)
+# Export via DuckDB's native COPY, NOT pandas .df(): SUM(quantity) is HUGEINT, and pandas
+# round-trips it as float64, which lands in BigQuery as FLOAT64 while schemas/d1_gold_ddl.sql
+# declares `units BIGINT`. Casting to BIGINT here makes DuckDB, the parquet, the DDL and the
+# warehouse all agree. COPY also preserves the declared types for every other column.
+CASTS = {"gold_sales_by_category": "* REPLACE (units::BIGINT AS units)",
+         "gold_revenue_by_region_month": "*"}
+for name in ("gold_revenue_by_region_month", "gold_sales_by_category"):
+    tgt = os.path.join(OUT, f"{name}.parquet").replace("'", "''")
+    con.execute(f"COPY (SELECT {CASTS[name]} FROM {name} ORDER BY ALL) "
+                f"TO '{tgt}' (FORMAT PARQUET)")
+
 con.close()
 
 # DDL shown to condition P — ONLY the gold tables, nothing below their grain.
@@ -47,7 +70,8 @@ ddl = """-- Pre-aggregated GOLD tables (business-ready summaries). Detail below 
 
 CREATE TABLE gold_revenue_by_region_month (
   ship_region VARCHAR,     -- shipping region
-  order_month DATE,        -- first day of the calendar month
+  order_month TIMESTAMP,   -- first day of the calendar month, at midnight (physical type is
+                           -- TIMESTAMP in DuckDB, the parquet export and BigQuery alike)
   net_revenue DOUBLE,      -- net revenue (shipped/delivered), summed to region x month
   order_count BIGINT       -- distinct fulfilled orders in that region x month
 );
@@ -60,4 +84,7 @@ CREATE TABLE gold_sales_by_category (
 """
 open(os.path.join(HERE, "..", "schemas", "d1_gold_ddl.sql"), "w").write(ddl)
 print(f"gold tables built: gold_revenue_by_region_month ({rows_rm} rows), gold_sales_by_category ({rows_cat} rows)")
+print(f"  duckdb:  {dbp}")
+print(f"  parquet: {os.path.join(OUT, 'gold_revenue_by_region_month.parquet')}")
+print(f"           {os.path.join(OUT, 'gold_sales_by_category.parquet')}")
 print("DDL -> schemas/d1_gold_ddl.sql")
