@@ -49,6 +49,9 @@ def main():
                         "correct": int(cls == "correct"),
                         "prompt_tokens": r.get("prompt_tokens"), "out_tokens": r.get("out_tokens"),
                         "latency": r.get("latency"),
+                        # `r` is a plain dict from json.loads, so a missing value is None, never
+                        # NaN — the `or ""` guard is correct HERE. Do not copy it onto a pandas
+                        # row cell, where a missing value is a truthy NaN (see score/score.py).
                         "sql": (r.get("sql") or "")[:500].replace("\n", " ").replace("\r", " ")})
     pd.DataFrame(per_run).to_csv(_p("results", "drilldown_scored.csv"), index=False)
     L = ["# Test A — The Drill-Down Trap", "",
