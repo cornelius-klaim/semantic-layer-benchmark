@@ -1,5 +1,9 @@
 duckdb>=0.10
-pandas>=2.0
+# Upper bound is belt-and-braces, not the fix: score/score.py handles pandas 3's default string
+# dtype (missing cells arrive as NaN, which is TRUTHY, so `x or default` does not guard them —
+# see score/score.py's is_missing/cell/text_cell). The <4 cap stops the NEXT major version from
+# changing missing-value semantics under the scorer unreviewed.
+pandas>=2.0,<4
 numpy>=1.26
 scipy>=1.11
 matplotlib>=3.7

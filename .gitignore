@@ -15,3 +15,9 @@ results_v3/
 # OS / editor
 .DS_Store
 .ipynb_checkpoints/
+
+# Local credentials — never commit (added for the BigQuery/Looker arm)
+looker.ini
+.env
+*.json.key
+profiles.yml

@@ -18,6 +18,34 @@ for qid, q in Q.items():
     try: TRUTH[qid] = R.truth_of(q)
     except Exception: TRUTH[qid] = {"kind": "unknown"}
 
+# ---- missing-value access on a pandas row -------------------------------------------------
+# A run row is a pandas Series, and not every run logs every field (the Claude arm has no
+# `plan`, refused/errored runs have no `sql`, etc.). pandas represents such a missing cell as
+# NaN — and **NaN is TRUTHY** — so the usual `row.get(k) or default` idiom does NOT guard it:
+# it hands the NaN straight through. Under pandas < 3 this was masked because a missing value
+# in an object-dtype column stayed as `None`; from pandas 3 the default string dtype stores it
+# as NaN, so `(row.get("sql") or "").lower()` raises
+#     AttributeError: 'float' object has no attribute 'lower'
+# on a fresh install. Every row-cell read below goes through these helpers instead; never
+# reintroduce a bare `or` guard on a DataFrame cell.
+def is_missing(v):
+    """True for None / NaN / pd.NA. Scalar-safe: never raises on a list or an array cell."""
+    if v is None: return True
+    if isinstance(v, (str, bytes, list, tuple, dict, set)): return False
+    try: return bool(pd.isna(v))
+    except (TypeError, ValueError): return False   # non-scalar (array-like) -> not a missing value
+
+def cell(row, key, default=None):
+    """Row value with a missing value (None/NaN) normalised to `default`."""
+    v = row.get(key, default)
+    return default if is_missing(v) else v
+
+def text_cell(row, key, default=""):
+    """Row value as a str, with a missing value normalised to `default`."""
+    v = cell(row, key)
+    if v is None: return default
+    return v if isinstance(v, str) else str(v)
+
 def _nums(row):
     out = []
     for v in row:
@@ -68,8 +96,8 @@ DERIVED_METRIC_QIDS = {"s2_ship_pct", "s2_avg_line_disc", "s3_net_of_refunds",
 
 def classify(row):
     qid = row["qid"]; q = Q.get(qid, {}); at = q.get("answer_type", "scalar")
-    t = TRUTH.get(qid, {}); outcome = row.get("outcome")
-    rows = row.get("rows")
+    t = TRUTH.get(qid, {}); outcome = cell(row, "outcome")
+    rows = cell(row, "rows")
     # normalize rows (JSON gave lists) -> list of lists
     if isinstance(rows, list) and rows and not isinstance(rows[0], (list, tuple)):
         rows = [rows]
@@ -81,7 +109,7 @@ def classify(row):
         return "refusal_correct" if outcome == "refusal" else "refusal_wrong"
     if at == "clarify":
         if outcome == "refusal": return "clarification"
-        if CLARIFY_RE.search(row.get("completion","") or ""): return "clarification"
+        if CLARIFY_RE.search(text_cell(row, "completion")): return "clarification"
         return "silent_guess"
     # numeric / set questions
     def _grade():
@@ -105,7 +133,7 @@ def classify(row):
 def rel_err(row):
     q = Q.get(row["qid"], {})
     if q.get("answer_type") != "scalar": return None
-    rows = row.get("rows")
+    rows = cell(row, "rows")
     if isinstance(rows, list) and rows and not isinstance(rows[0], (list, tuple)): rows = [rows]
     trows = TRUTH.get(row["qid"], {}).get("rows")
     # only a genuine single-scalar-vs-single-scalar comparison is a measurable "magnitude"; when the
@@ -119,7 +147,7 @@ def rel_err(row):
 
 # ---- SQL audit flags ----
 def audits(row):
-    sql = (row.get("sql") or "")
+    sql = text_cell(row, "sql")
     flags = []
     ql = sql.lower()
     q = Q.get(row["qid"], {})
@@ -131,7 +159,7 @@ def audits(row):
     # missing certified status filter on a revenue/margin question
     if row["condition"] in ("U","D","G") and any(k in row["qid"] for k in
             ["netrev","margin","gross","aov","top_customer","vocab","rev_"]):
-        if "status" not in ql and row.get("outcome") == "ok":
+        if "status" not in ql and cell(row, "outcome") == "ok":
             flags.append("missing_status_filter")
     # fan-out: joins order_items AND aggregates shipping_fee (order-grain over lines)
     if "order_items" in ql and "shipping_fee" in ql and re.search(r"sum\s*\(\s*[a-z_.]*shipping_fee", ql):
@@ -143,11 +171,11 @@ def audits(row):
     if "top_customer" in row["qid"] and ("full_name" in ql or "group by" in ql and "customer_key" not in ql and "customer_id" not in ql):
         flags.append("grouped_by_name_not_identity")
     # Suite 3 partial-key fan-out: joins `returns` to another table without line_number
-    if "returns" in ql and " join " in ql and "line_number" not in ql and row.get("outcome") == "ok":
+    if "returns" in ql and " join " in ql and "line_number" not in ql and cell(row, "outcome") == "ok":
         flags.append("partial_key_returns_fanout")
     # Cross-domain (D2): joined LMS email to HR without normalizing case/alias
     if row["dataset"] == "d2" and any(k in row["qid"] for k in ["advneg","assess","lift"]):
-        if row.get("outcome") == "ok" and "lower(" not in ql and "email" in ql:
+        if cell(row, "outcome") == "ok" and "lower(" not in ql and "email" in ql:
             flags.append("email_join_no_normalize")
     return flags
 
@@ -205,12 +233,43 @@ def main():
         by = wrong.groupby("condition")["rel_err"].median().mul(100).round(1)
         print("  median rel err by condition:", by.to_dict())
 
-    # cost/latency
-    cost = df.groupby("condition").agg(prompt_tokens=("prompt_tokens","mean"),
-                                       out_tokens=("out_tokens","mean"),
-                                       latency=("latency","mean")).round(1)
-    print("\n=== Mean tokens & latency by condition ==="); print(cost.to_string())
-    cost.to_csv(_p("results","cost_by_condition.csv"))
+    # ---- cost / latency ----------------------------------------------------------------
+    # NOT every arm carries per-call accounting. The Gemini arm is called over the REST API and
+    # records promptTokenCount / candidatesTokenCount and a measured wall-clock latency. The
+    # Claude arm is answered by subagents and ingested by harness/ingest_claude.py, which writes
+    # prompt_tokens = out_tokens = latency = 0 because there is no per-call meter to read — those
+    # zeros mean "not measured", not "free and instant". Averaging them into the mean drags every
+    # figure down (it silently understated the whole table before this was split out), so the
+    # table reports each scope on its own rows and states exactly which rows it covers.
+    #   scope=pooled_all_rows : every scored row, zeros included -> DILUTED, kept for continuity
+    #   scope=token_accounted : only rows with prompt_tokens > 0 -> the real per-query cost
+    # (results/paper_numbers.json["cost"] narrows further — COMPLETE-coverage tiers only and
+    #  outcome in {ok, refusal} — so its means differ slightly from scope=token_accounted here.)
+    has_tokens = df["prompt_tokens"].fillna(0) > 0
+    def _cost_rows(d, scope):
+        out = []
+        for cond in [c for c in ["U","D","G","S"] if (d["condition"] == c).any()]:
+            dc = d[d["condition"] == cond]
+            tot = dc["prompt_tokens"].fillna(0) + dc["out_tokens"].fillna(0)
+            out.append({"scope": scope, "condition": cond,
+                        "vendors": "|".join(sorted(dc["vendor"].dropna().unique())),
+                        "n_rows": int(len(dc)),
+                        "n_token_accounted": int((dc["prompt_tokens"].fillna(0) > 0).sum()),
+                        "prompt_tokens": round(float(dc["prompt_tokens"].mean()), 1),
+                        "out_tokens": round(float(dc["out_tokens"].mean()), 1),
+                        "total_tokens": round(float(tot.mean()), 1),
+                        "latency": round(float(dc["latency"].mean()), 2)})
+        return out
+    cost = pd.DataFrame(_cost_rows(df, "pooled_all_rows") + _cost_rows(df[has_tokens], "token_accounted"))
+    n_unmeasured = int((~has_tokens).sum())
+    unmeasured_vendors = "|".join(sorted(df.loc[~has_tokens, "vendor"].dropna().unique())) or "-"
+    print("\n=== Mean tokens & latency by condition ===")
+    print(f"  {n_unmeasured} of {len(df)} scored rows carry NO per-call token/latency accounting "
+          f"(vendor: {unmeasured_vendors}; logged as 0).")
+    print("  scope=pooled_all_rows -> every row, including those zeros (understates tokens AND latency)")
+    print("  scope=token_accounted -> only rows with prompt_tokens>0 (the honest per-query cost)")
+    print(cost.to_string(index=False))
+    cost.to_csv(_p("results","cost_by_condition.csv"), index=False)
 
     # SQL audit flag counts
     fl = df[df["flags"]!=""].assign(flag=df["flags"].str.split("|")).explode("flag")
