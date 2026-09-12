@@ -83,18 +83,18 @@ ultimately unreachable* through prompting alone. That is "get there faster," mea
 ### Runtime cost per query
 | layer | in tok | out tok | total/query | latency | ~$ / 1000 queries |
 |------:|-------:|--------:|------------:|--------:|------------------:|
-| U | 331 | 75 | 406 | 3.19s | $0.20 |
-| D | 3,044 | 85 | 3,129 | 2.63s | $1.02 |
-| G | 1,769 | 85 | 1,854 | 2.23s | $0.64 |
-| **S** | **717** | **40** | **757** | **1.56s** | **$0.26** |
+| U | 324 | 84 | 408 | 4.69s | $0.20 |
+| D | 3,327 | 87 | 3,414 | 2.98s | $1.10 |
+| G | 1,942 | 87 | 2,029 | 2.58s | $0.69 |
+| **S** | **829** | **39** | **868** | **1.54s** | **$0.30** |
 
-S is the **cheapest grounded layer and the fastest** — ~4× cheaper than D, ~2.5× cheaper than G,
+S is the **cheapest grounded layer and the fastest** — ~4× cheaper than D, ~2.3× cheaper than G,
 and nearly as cheap as ungrounded U — because it sends a compact field catalog and receives a compact
 plan, while D and G resend the entire knowledge base on every call and emit full SQL. (Blended Gemini
 rate ≈ $0.30 / 1M input, $1.20 / 1M output.)
 
 ### Total tokens across the benchmark
-D + G together burned **3.0M tokens**; S used **455K** — a 6.6× difference for the two free-form
+D + G together burned **4.6M tokens**; S used **760K** — a 6.0× difference for the two free-form
 grounded layers over the enforced one.
 
 ### Cost to REACH 100%

@@ -33,14 +33,14 @@ and models:
 
 | Layer | In tok/query | Out tok/query | Total/query | Latency | ~$ / 1,000 queries | Tokens vs **S** |
 |---|--:|--:|--:|--:|--:|--:|
-| U ungrounded | 331 | 75 | 406 | 3.19s | $0.20 | 0.54× (but 16% accurate — useless) |
-| D doc-grounded (OKF) | 3,044 | 85 | 3,129 | 2.63s | $1.02 | **4.1× more** |
-| G prompt-grounded model | 1,769 | 85 | 1,854 | 2.23s | $0.64 | **2.4× more** |
-| **S semantic layer** | **717** | **40** | **757** | **1.56s** | **$0.26** | **1.0× (baseline)** |
+| U ungrounded | 324 | 84 | 408 | 4.69s | $0.20 | 0.47× (but 18% accurate — useless) |
+| D doc-grounded (OKF) | 3,327 | 87 | 3,414 | 2.98s | $1.10 | **3.9× more** |
+| G prompt-grounded model | 1,942 | 87 | 2,029 | 2.58s | $0.69 | **2.3× more** |
+| **S semantic layer** | **829** | **39** | **868** | **1.54s** | **$0.30** | **1.0× (baseline)** |
 
-Against the layers that actually work, `S` cuts tokens **~76% vs D** and **~59% vs G** per query,
+Against the layers that actually work, `S` cuts tokens **~75% vs D** and **~57% vs G** per query,
 while being the **fastest** and the **most accurate**. Across the full benchmark, `D + G` together
-burned **3.0M tokens**; `S` used **455K** — a **6.6×** difference.
+burned **4.6M tokens**; `S` used **760K** — a **6.0×** difference.
 
 *(Blended Gemini rate used for the dollar column: ≈ $0.30 / 1M input, $1.20 / 1M output.)*
 
@@ -52,9 +52,9 @@ LLM):
 
 | Analytical queries | D / year | G / year | **S / year** | Saved vs D | Saved vs G |
 |---|--:|--:|--:|--:|--:|
-| 10k / day (3.65M/yr) | $3,720 | $2,340 | **$950** | $2,770 | $1,390 |
-| 100k / day (36.5M/yr) | $37,200 | $23,400 | **$9,500** | $27,700 | $13,900 |
-| 1M / day (365M/yr) | $372,000 | $234,000 | **$95,000** | $277,000 | $139,000 |
+| 10k / day (3.65M/yr) | $4,020 | $2,510 | **$1,080** | $2,940 | $1,430 |
+| 100k / day (36.5M/yr) | $40,200 | $25,100 | **$10,800** | $29,400 | $14,300 |
+| 1M / day (365M/yr) | $402,000 | $251,000 | **$108,000** | $294,000 | $143,000 |
 
 Two multipliers make this conservative. **Model tier:** the table uses a cheap flash-class model; a
 frontier reasoning model priced ~20–30× higher scales every figure by the same factor (S's per-query
