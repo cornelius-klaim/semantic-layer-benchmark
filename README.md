@@ -5,6 +5,23 @@ changes the **correctness** of the analytics it produces. Accompanies the book *
 Layer*. Everything here is open, seeded, and deterministic; the paper's numbers reproduce with
 `make reproduce`.
 
+## Requirements
+
+**Reproducing the paper's numbers needs only Python — no Looker, no BigQuery, no cloud account, and no API keys.** Every model's outputs are already logged in [`results/`](results/), so scoring and analysis regenerate the headline figures directly from them.
+
+- **Python 3** with the packages in [`requirements.txt`](requirements.txt) — `duckdb`, `pandas`, `numpy`, `scipy`, `matplotlib`, `pyyaml`, `pyarrow`.
+- The two warehouses are local **DuckDB** files, seeded deterministically by `datagen/` — there is nothing external to connect to.
+
+```bash
+pip install -r requirements.txt
+make data                 # build the seeded DuckDB warehouses + ground truth (by construction)
+make score stats plots    # regenerate the ladder, statistics, and figures from the logged runs
+```
+
+**Optional — only if you want to re-collect the model runs from scratch** (they already ship in `results/`): a `GEMINI_API_KEY` for the Gemini arm and Anthropic API access for the Claude arm (`make run`).
+
+**Looker and LookML are _not_ required to reproduce anything here.** Condition **S** (the semantic layer) is a self-contained Python compiler over [`semantic_models/`](semantic_models/)`*.yaml`, executed on DuckDB. A LookML-on-Looker build of the same model was used once, separately, as an *independent second-vendor check* that the certified measures match the compiler to the cent — it corroborates the results but is not part of reproducing them.
+
 ## The question
 
 The hard part of enterprise analytics is not SQL syntax — modern models write fluent SQL. It is
