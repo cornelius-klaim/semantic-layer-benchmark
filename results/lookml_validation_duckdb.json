@@ -1,0 +1,75 @@
+{
+  "engine": "duckdb-lookml-parity",
+  "measures": {
+    "net_revenue": {
+      "lookml": 60185854.28000027,
+      "certified": 60185854.280000225,
+      "ok": true
+    },
+    "gross_revenue": {
+      "lookml": 64793930.880000025,
+      "certified": 64793930.88000004,
+      "ok": true
+    },
+    "gross_margin": {
+      "lookml": 27199313.82000005,
+      "certified": 27199313.820000067,
+      "ok": true
+    },
+    "line_count": {
+      "lookml": 108314.0,
+      "certified": 108314.0,
+      "ok": true
+    },
+    "order_count": {
+      "lookml": 35996.0,
+      "certified": 35996.0,
+      "ok": true
+    },
+    "active_customers": {
+      "lookml": 4996.0,
+      "certified": 4996.0,
+      "ok": true
+    },
+    "shipping_fee_total": {
+      "lookml": 450531.2300000001,
+      "certified": 450531.22999999765,
+      "ok": true
+    },
+    "avg_shipping_fee": {
+      "lookml": 12.51614707189687,
+      "certified": 12.516147071896812,
+      "ok": true
+    },
+    "refund_total": {
+      "lookml": 2698480.8600000017,
+      "certified": 2698480.8599999966,
+      "ok": true
+    },
+    "refund_qty": {
+      "lookml": 36237.0,
+      "certified": 36237.0,
+      "ok": true
+    },
+    "marketing_spend_total": {
+      "lookml": 1338645.2399999995,
+      "certified": 1338645.2399999995,
+      "ok": true
+    },
+    "aov": {
+      "lookml": 1672.0150650072305,
+      "certified": 1672.0150650072292,
+      "ok": true
+    },
+    "shipping_pct_of_revenue": {
+      "lookml": 0.7485666447534518,
+      "certified": 0.7485666447534488,
+      "ok": true
+    },
+    "net_revenue_after_refunds": {
+      "lookml": 57487373.42000027,
+      "certified": 57487373.420000225,
+      "ok": true
+    }
+  }
+}

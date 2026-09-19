@@ -1,0 +1,123 @@
+{
+  "dataset": "d1",
+  "measures_scalar": {
+    "net_revenue": {
+      "value": 60185854.280000225
+    },
+    "gross_revenue": {
+      "value": 64793930.88000004
+    },
+    "order_count": {
+      "value": 35996
+    },
+    "line_count": {
+      "value": 108314
+    },
+    "aov": {
+      "value": 1672.0150650072292
+    },
+    "gross_margin": {
+      "value": 27199313.820000067
+    },
+    "active_customers": {
+      "value": 4996
+    },
+    "shipping_fee_total": {
+      "value": 450531.22999999765
+    },
+    "marketing_spend_total": {
+      "value": 1338645.2399999995
+    },
+    "refund_total": {
+      "value": 2698480.8599999966
+    },
+    "refund_qty": {
+      "value": 36237
+    },
+    "avg_shipping_fee": {
+      "value": 12.516147071896812
+    },
+    "shipping_pct_of_revenue": {
+      "value": 0.7485666447534488
+    },
+    "net_revenue_after_refunds": {
+      "value": 57487373.420000225
+    }
+  },
+  "breakdowns": {
+    "net_revenue__by_ship_region": {
+      "rows": [
+        [
+          "EMEA",
+          10408408.118000023
+        ],
+        [
+          "West",
+          9924149.536499996
+        ],
+        [
+          "APAC",
+          10215482.857000025
+        ],
+        [
+          "Northeast",
+          9709623.915000003
+        ],
+        [
+          "South",
+          9985506.333500024
+        ],
+        [
+          "Midwest",
+          9942683.519999983
+        ]
+      ]
+    },
+    "refund_total__by_category": {
+      "rows": [
+        [
+          "Electronics",
+          353385.11000000057
+        ],
+        [
+          "Dairy",
+          334345.5000000003
+        ],
+        [
+          "Household",
+          315382.95999999996
+        ],
+        [
+          "Confections",
+          379750.62000000005
+        ],
+        [
+          "Produce",
+          308973.6699999999
+        ],
+        [
+          "Beverages",
+          288688.4899999999
+        ],
+        [
+          "Grains",
+          366950.43000000046
+        ],
+        [
+          "Seafood",
+          351004.0800000001
+        ]
+      ]
+    },
+    "shipping_by_category_MUST_REFUSE": {
+      "refuse": "measure 'shipping_fee_total' (grain: orders) cannot be broken down by dimension 'product_category' (from products) \u2014 finer grain would fan out"
+    },
+    "net_revenue__paid_search": {
+      "rows": [
+        [
+          18281722.185000032
+        ]
+      ]
+    }
+  }
+}
