@@ -2,7 +2,7 @@
 # order_items on order_id ALONE would fan each refund out across every line in the order
 # (the seed inflates the total 3.66x that way); the explore joins on the FULL compound key.
 view: returns {
-  sql_table_name: @{SCHEMA}.returns ;;
+  sql_table_name: `@{gcp_project}`.@{SCHEMA}.returns ;;
 
   dimension: pk {
     primary_key: yes
