@@ -1,0 +1,106 @@
+{
+  "engine": "looker-bigquery",
+  "instance": "<redacted Looker instance>",
+  "model": "d1",
+  "passed": 14,
+  "total": 14,
+  "measures": {
+    "net_revenue": {
+      "looker": 60185854.28000051,
+      "certified": 60185854.280000225,
+      "ok": true
+    },
+    "gross_revenue": {
+      "looker": 64793930.87999952,
+      "certified": 64793930.88000004,
+      "ok": true
+    },
+    "gross_margin": {
+      "looker": 27199313.819999594,
+      "certified": 27199313.820000067,
+      "ok": true
+    },
+    "line_count": {
+      "looker": 108314,
+      "certified": 108314.0,
+      "ok": true
+    },
+    "aov": {
+      "looker": 1672.0150650072371,
+      "certified": 1672.0150650072292,
+      "ok": true
+    },
+    "shipping_pct_of_revenue": {
+      "looker": 0.7485666447534493,
+      "certified": 0.7485666447534488,
+      "ok": true
+    },
+    "net_revenue_after_refunds": {
+      "looker": 57538698.72000051,
+      "certified": 57538698.72000022,
+      "ok": true
+    },
+    "order_count": {
+      "looker": 35996,
+      "certified": 35996.0,
+      "ok": true
+    },
+    "active_customers": {
+      "looker": 4996,
+      "certified": 4996.0,
+      "ok": true
+    },
+    "shipping_fee_total": {
+      "looker": 450531.2299999952,
+      "certified": 450531.22999999765,
+      "ok": true
+    },
+    "avg_shipping_fee": {
+      "looker": 12.516147071896745,
+      "certified": 12.516147071896812,
+      "ok": true
+    },
+    "refund_total": {
+      "looker": 2647155.5599999973,
+      "certified": 2647155.5600000056,
+      "ok": true
+    },
+    "refund_qty": {
+      "looker": 35859,
+      "certified": 35859.0,
+      "ok": true
+    },
+    "marketing_spend_total": {
+      "looker": 1338645.2399999998,
+      "certified": 1338645.2399999995,
+      "ok": true
+    }
+  },
+  "refund_by_category_total": 2647155.56,
+  "net_revenue_by_region": [
+    {
+      "orders.ship_region": "EMEA",
+      "order_items.net_revenue": 10408408.118000017
+    },
+    {
+      "orders.ship_region": "APAC",
+      "order_items.net_revenue": 10215482.856999965
+    },
+    {
+      "orders.ship_region": "South",
+      "order_items.net_revenue": 9985506.333500005
+    },
+    {
+      "orders.ship_region": "Midwest",
+      "order_items.net_revenue": 9942683.520000026
+    },
+    {
+      "orders.ship_region": "West",
+      "order_items.net_revenue": 9924149.536499994
+    },
+    {
+      "orders.ship_region": "Northeast",
+      "order_items.net_revenue": 9709623.914999986
+    }
+  ]
+}

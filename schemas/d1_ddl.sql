@@ -17,7 +17,7 @@ CREATE TABLE products (
 CREATE TABLE orders (
   order_id BIGINT,
   customer_key BIGINT,
-  order_ts TIMESTAMP,
+  order_ts VARCHAR,
   status BIGINT,
   ship_region VARCHAR,
   shipping_fee DOUBLE,
@@ -35,7 +35,7 @@ CREATE TABLE order_items (
 );
 
 CREATE TABLE marketing_spend (
-  spend_month TIMESTAMP,
+  spend_month VARCHAR,
   channel VARCHAR,
   spend DOUBLE
 );

@@ -2,7 +2,7 @@
 # joined order LINES would fan out, so order_id is declared primary_key and every order-grain
 # measure below is computed with Looker symmetric aggregates.
 view: orders {
-  sql_table_name: @{SCHEMA}.orders ;;
+  sql_table_name: `@{gcp_project}`.@{SCHEMA}.orders ;;
 
   dimension: order_id {
     primary_key: yes

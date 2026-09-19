@@ -47,11 +47,29 @@ python validate/validate_lookml_duckdb.py
 **2. Live Looker (second engine)** — `validate/validate_lookml.py`
 Runs each measure through the LookML model on a real Looker instance (Looker compiles to
 BigQuery SQL with its own symmetric aggregates) and checks the same certified values.
+**Result: 14/14 certified measures reproduced to the cent on live Looker over BigQuery**
+(`results/lookml_validation_looker.json`) — net_revenue $60,185,854.28, gross_margin
+$27,199,313.82, order_count 35,996, fan-out-safe shipping_fee_total $450,531.23, compound-key
+refund_total $2,647,155.56, and the rest — including the product-category refund breakdown,
+which sums back to the certified total through Looker's symmetric aggregates.
+
+One-time setup:
 
 ```
-BQ_PROJECT=<proj> python validate/load_d1_to_bigquery.py   # d1 -> BigQuery dataset @{SCHEMA}
-# deploy lookml/d1 to the instance; point its connection at that dataset
-LOOKERSDK_CONFIG_FILE=looker.ini python validate/validate_lookml.py
+# 1. load the seeded warehouse into BigQuery (dataset = @{SCHEMA})
+BQ_PROJECT=<proj> python validate/load_d1_to_bigquery.py
+
+# 2. create a Looker project from lookml/d1 (its own repo, LookML at root), set the three
+#    manifest constants (connection_name, gcp_project, SCHEMA) for your instance, and register
+#    a LookML model named d1 whose connection points at that BigQuery project.
+
+# 3. validate
+LOOKERSDK_CONFIG_FILE=looker.ini LOOKER_WORKSPACE=production \
+  python validate/validate_lookml.py     # -> 14/14 to the cent
 ```
 
 `certified_measures_d1.json` is regenerated from the compiler by `validate/certify_measures.py`.
+
+> Note: `datagen/gen_d1_returns.py` was fixed to sort its candidate lines before applying the
+> seeded return mask — without a deterministic `ORDER BY`, the refund totals drifted run to run.
+> The refund figures are now reproducible; the partial-key fan-out ratio (~3.68×) is unaffected.

@@ -1,7 +1,7 @@
 # products — ONE row per product. Parent of order_items (many_to_one). Supplies unit_cost
 # for gross_margin and category for product-grain breakdowns.
 view: products {
-  sql_table_name: @{SCHEMA}.products ;;
+  sql_table_name: `@{gcp_project}`.@{SCHEMA}.products ;;
 
   dimension: product_key {
     primary_key: yes

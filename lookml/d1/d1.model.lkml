@@ -3,7 +3,7 @@
 # Connection: set to a BigQuery connection whose default dataset holds the seeded d1 tables
 # (loaded by validate/load_d1_to_bigquery.py into dataset @{SCHEMA}). Update the name below to
 # match the target instance's connection before deploying.
-connection: "bigquery"
+connection: "@{connection_name}"
 
 include: "/views/*.view.lkml"
 

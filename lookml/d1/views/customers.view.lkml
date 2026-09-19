@@ -1,7 +1,7 @@
 # customers — ONE row per customer identity. full_name is a LABEL on the identity, not the
 # identity itself (names are not unique: the seed plants 40 "John Smith" collisions).
 view: customers {
-  sql_table_name: @{SCHEMA}.customers ;;
+  sql_table_name: `@{gcp_project}`.@{SCHEMA}.customers ;;
 
   dimension: customer_id {
     primary_key: yes
