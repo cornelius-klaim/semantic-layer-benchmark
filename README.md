@@ -106,6 +106,8 @@ schemas/          physical DDL shown to U/D/G (certified rollups deliberately ex
 semantic_models/  the single source of truth (d1.yaml, d2.yaml)
 emit/             emit_g (structured, condition G) + emit_d (OKF markdown, condition D)
 compiler/         condition S — deterministic, fan-out-safe plan→SQL compiler with refusal
+lookml/           the d1 certified model in LookML (a second implementation) + validation
+validate/         certify measures + validate the LookML (reproducible DuckDB + live Looker)
 harness/          run.py (U/D/G/S runner), multiturn.py (Suite 6), llm.py (Gemini adapter)
 questions/        business-language questions + by-construction truth (d1, d2, multiturn)
 truth/            planted-effect ground truth (D2)
@@ -127,6 +129,44 @@ make data && make run-parallel       # backgrounds the four run jobs
 make paper                           # score + stats + plots from existing runs
 python3 paper/fill_numbers.py        # bake numbers into paper/whitepaper.qmd
 ```
+
+## The model in LookML — reproduce on a real semantic layer
+
+The certified d1 model is also implemented in **LookML** under [`lookml/d1/`](lookml/d1), so the
+same governed surface can be run on a production semantic layer, not only on the reference
+compiler. Fan-out safety is expressed the LookML way — declared primary keys + symmetric
+aggregates, with `returns` joined on the full compound key:
+
+```lookml
+# lookml/d1/views/orders.view.lkml — order-grain measure, fan-out-safe
+measure: shipping_fee_total {
+  type: sum
+  sql: ${shipping_fee} ;;
+  filters: [status_code: "3,4"]        # certified shipped/delivered filter
+  value_format_name: usd
+}
+```
+
+**Two ways to validate — both reproduce all 14 certified measures to the cent:**
+
+```bash
+# 1) reproducible, NO Looker account — builds the explore's join on the seeded
+#    warehouse and checks every measure against the compiler's certified values
+make data
+python validate/certify_measures.py          # -> results/certified_measures_d1.json
+python validate/validate_lookml_duckdb.py     # -> 14/14 to the cent (+ the two fan-out traps)
+```
+
+```bash
+# 2) live Looker over BigQuery (the second engine)
+BQ_PROJECT=<your-project> python validate/load_d1_to_bigquery.py    # d1 -> BigQuery dataset
+# create a Looker project from lookml/d1 (LookML at repo root), set the three manifest
+# constants (connection_name, gcp_project, SCHEMA), register a model named d1, then:
+LOOKERSDK_CONFIG_FILE=looker.ini python validate/validate_lookml.py # -> 14/14 to the cent
+```
+
+Full step-by-step (including the one-time Looker project + connection setup) is in
+[`lookml/README.md`](lookml/README.md).
 
 ## Datasets and planted traps
 
