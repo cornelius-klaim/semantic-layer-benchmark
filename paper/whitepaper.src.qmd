@@ -184,7 +184,9 @@ layers such as **Cube** and **AtScale**. LookML is notable for handling grain an
 we treat it as one realization of the pattern, not as the object of study. Deliberately, then, our
 condition **S** is *vendor-neutral*: a generic deterministic compiler over a validated query plan, so
 the result is a property of enforcement itself rather than of any product. The question S isolates is
-what that enforcement adds *beyond* putting the same definitions in the prompt.
+what that enforcement adds *beyond* putting the same definitions in the prompt. We confirm the
+equivalence empirically in §[-@sec-lookml]: the same D1 model, implemented in LookML and executed on
+Looker over BigQuery, reproduces every certified measure to the cent.
 
 **This work** contributes: (i) a four-rung grounding ladder that cleanly separates content from
 enforcement; (ii) two open, seeded benchmark datasets with *ground truth by construction* and planted
@@ -382,6 +384,24 @@ in the Claude pool, which if anything drags the Gemini average down — so the t
 vendors climb the same rungs in the same order*, at every tier we tested.
 
 ![The grounding ladder reproduced independently for each vendor.](../paper_assets/figures/fig_vendor.png){#fig-vendor width=85%}
+
+## The certified model reproduces on a production semantic layer {#sec-lookml}
+
+The same independence holds for the *execution engine*, not only the model vendor. Condition **S** is a
+deliberately vendor-neutral compiler (§[-@sec-ladder]), so a fair question is whether its correctness is
+a property of the modeling discipline or of that particular compiler. To settle it, we re-implemented the
+D1 certified model in **LookML** and ran every certified measure through **Looker over BigQuery** — a
+second, independent engine that compiles the model to SQL with its own fan-out machinery: symmetric
+aggregates over declared primary keys, and a join on the full compound `(order_id, line_number)` key for
+the returns table. All fourteen certified measures reproduce the compiler's values *to the cent* — net
+revenue, gross margin, order and line counts, the order-grain shipping fee queried beside line-grain
+revenue, and the compound-key refund total — and the product-category refund breakdown sums back to the
+certified total through Looker's symmetric aggregates, where dropping the line key would fan the refunds
+out severalfold (§[-@sec-data]). Two implementations that share only a model definition, executing on two
+different engines and agreeing exactly, is evidence that condition **S** measures *enforcement itself*:
+the reference compiler is a convenience, not the source of the result. The LookML project and a
+one-command reproduction — a no-account DuckDB parity check and the live-Looker run — are in the
+repository (`lookml/`, `validate/`).
 
 ## Drill-down without getting stuck: gold tables vs. the Semantic Gold Layer {#sec-composability}
 
