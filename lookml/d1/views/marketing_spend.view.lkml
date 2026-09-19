@@ -2,7 +2,7 @@
 # sales grain, so it is exposed as its own explore rather than joined into order_items.
 # Its channel vocabulary stores paid search as 'PPC'.
 view: marketing_spend {
-  sql_table_name: @{SCHEMA}.marketing_spend ;;
+  sql_table_name: `@{gcp_project}`.@{SCHEMA}.marketing_spend ;;
 
   dimension: pk {
     primary_key: yes

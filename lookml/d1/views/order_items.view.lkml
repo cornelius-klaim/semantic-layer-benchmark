@@ -2,7 +2,7 @@
 # revenue surface: net/gross revenue, margin, and the cross-grain ratios live here. The
 # shipped/delivered filter is enforced on every measure via orders.status_code.
 view: order_items {
-  sql_table_name: @{SCHEMA}.order_items ;;
+  sql_table_name: `@{gcp_project}`.@{SCHEMA}.order_items ;;
 
   # composite grain -> a single primary_key so symmetric aggregates de-duplicate correctly
   dimension: pk {

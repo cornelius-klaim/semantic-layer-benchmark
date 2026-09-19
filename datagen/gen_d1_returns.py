@@ -13,11 +13,15 @@ HERE = os.path.dirname(__file__)
 dbp = os.path.join(HERE, "..", "warehouse", "d1.duckdb")
 con = duckdb.connect(dbp)   # read-write; run only after D1 jobs release the DB
 
-# candidate lines: those in delivered orders (status 4) — realistic return population
+# candidate lines: those in delivered orders (status 4) — realistic return population.
+# ORDER BY is REQUIRED for reproducibility: the seeded mask below is applied positionally,
+# so the row order must be deterministic (DuckDB does not guarantee order without ORDER BY —
+# without it the refund total drifts run-to-run).
 lines = con.execute("""
   SELECT oi.order_id, oi.line_number, oi.quantity, oi.unit_price, oi.discount_rate
   FROM order_items oi JOIN orders o USING(order_id)
   WHERE o.status = 4
+  ORDER BY oi.order_id, oi.line_number
 """).df()
 # ~14% of delivered lines get a (partial) return
 mask = rng.random(len(lines)) < 0.14
