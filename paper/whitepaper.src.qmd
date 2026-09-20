@@ -685,6 +685,16 @@ a compact field catalog and emits a compact plan (mean {{cost.S.out_tokens}} out
 knowledge base on every call. Per query this is roughly **4× cheaper than D and 2.5× cheaper than G**,
 and across the whole benchmark D and G together consumed about **6× the tokens** S did.
 
+Crucially, this economy is a property of the **field-selection interface, not of our compiler**. We
+re-ran condition S with **Looker** as the executor — the model selects fields from the explore and
+Looker generates the SQL — across the same six Gemini tiers and the answerable D1 questions (three runs,
+1{,}944 model calls, no errors). The Looker arm averages **≈900 tokens per query**, statistically
+indistinguishable from the reference compiler and reproducing the same ≈4× advantage over the document
+condition; it is, if anything, marginally *cheaper* despite the explore exposing more fields than the
+compiler's curated catalog. The token advantage is therefore architectural — a compact plan in place of a
+resent knowledge base and emitted SQL — and carries over unchanged to a production semantic layer
+(per-tier numbers in `results/token_measurement_looker.json`; see §[-@sec-lookml]).
+
 The cost asymmetry is starkest in the *reaching-100* experiment (§[-@sec-reaching100]): driving S to
 100% took ~110K tokens of re-runs — and five of its eight edits cost **zero** inference, recompiling
 already-logged plans — whereas the D/G guardrail attempt spent ~4× as many tokens and still did not
