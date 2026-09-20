@@ -111,3 +111,21 @@ refund_total over product-category breakdown (symmetric aggregate): 2,647,155.56
 
 `certified_measures_d1.json` is regenerated from the compiler by `validate/certify_measures.py`,
 so both validations check against the same ground truth the benchmark uses everywhere else.
+
+## Token economics also reproduce on Looker
+
+`validate/measure_tokens.py` runs condition S with **Looker** as the executor (the model selects
+fields from the explore; Looker generates the SQL) and compares tokens/query against D, G, and the
+reference compiler, across six Gemini tiers × the answerable D1 questions × 3 runs (1,944 calls):
+
+```
+condition                       total tokens/query
+D  (docs, emits SQL)                 4,100
+G  (model-in-prompt, emits SQL)      2,410
+S  — compiler (catalog -> plan)      1,039
+S  — Looker  (catalog -> plan)         900     <- ~4.6x cheaper than D
+```
+
+S-on-Looker is statistically indistinguishable from the compiler (indeed marginally cheaper despite
+exposing more fields) — the token advantage is a property of the field-selection interface, not of the
+compiler. Full per-tier numbers: `results/token_measurement_looker.json`.
